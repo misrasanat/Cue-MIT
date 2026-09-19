@@ -1,27 +1,6 @@
-import { useState } from 'react';
-import { Terminal, Copy, Check } from 'lucide-react';
+import { Terminal } from 'lucide-react';
 import Modal from '../components/Modal';
-
-function Command({ text }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard blocked; the command is still on screen to copy by hand.
-    }
-  };
-  return (
-    <div className="command">
-      <code>{text}</code>
-      <button className="icon-btn" onClick={copy} aria-label={`Copy ${text}`}>
-        {copied ? <Check size={16} /> : <Copy size={16} />}
-      </button>
-    </div>
-  );
-}
+import Command from '../components/Command';
 
 export default function SetupGuideModal({ user, onClose }) {
   return (
@@ -32,14 +11,14 @@ export default function SetupGuideModal({ user, onClose }) {
       footer={<button className="btn btn-primary" onClick={onClose}>All set</button>}
     >
       <p className="muted">
-        Two quick steps so Cue can see what your coding assistant changes
-        {user ? <> and save it to <strong>{user.email}</strong></> : ''}.
+        Three commands, once per machine, so Cue can follow along while your assistant works
+        {user ? <> and save it to <strong>{user.email}</strong></> : ''}. Cue supports Gemini CLI and Antigravity for now.
       </p>
 
       <div className="setup-step">
         <span className="step-num">1</span>
         <div>
-          <strong>Install Cue in your terminal</strong>
+          <strong>Install Cue</strong>
           <Command text="pip install cue-companion" />
         </div>
       </div>
@@ -47,15 +26,24 @@ export default function SetupGuideModal({ user, onClose }) {
       <div className="setup-step">
         <span className="step-num">2</span>
         <div>
-          <strong>Sign in from the terminal</strong>
-          <Command text="python backend/auth_cli.py" />
-          <p className="muted small">It opens a prompt for the same email and password you use here.</p>
+          <strong>Create your account or log in</strong>
+          <Command text="cue" />
+          <p className="muted small">Use the same email and password you use here.</p>
+        </div>
+      </div>
+
+      <div className="setup-step">
+        <span className="step-num">3</span>
+        <div>
+          <strong>Connect your assistant</strong>
+          <Command text="cue-setup" />
+          <p className="muted small">Installs the Gemini CLI and Antigravity hooks on this computer.</p>
         </div>
       </div>
 
       <div className="callout callout-cool">
-        <strong>That’s it</strong>
-        <span>Use your assistant as normal. When you’re ready, come back and turn the session into lessons.</span>
+        <strong>That&rsquo;s it</strong>
+        <span>Use your assistant as normal. When you&rsquo;re ready, come back and turn the session into lessons.</span>
       </div>
     </Modal>
   );
