@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Home as HomeIcon, GraduationCap, Users, Settings as SettingsIcon, Building2, Users as UsersIcon } from 'lucide-react';
+import { Home as HomeIcon, GraduationCap, Users, Settings as SettingsIcon, Building2, Users as UsersIcon, ChevronDown } from 'lucide-react';
 import { supabase } from './supabase';
 import { API_BASE } from './utils/api';
 import { buildLessons } from './utils/cards';
@@ -305,11 +305,21 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
-          <div className="brand-grow">
+          <div className="brand-zone">
             <button className="brand brand-btn" onClick={() => { setShowLanding(true); window.scrollTo({ top: 0 }); }} aria-label="Cue welcome page">
               <span className="brand-mark" aria-hidden="true">C</span>
               <span className="brand-name">Cue</span>
             </button>
+            {session && activeProject && (
+              <div className="project-switcher">
+                <span className="brand-divider" aria-hidden="true">/</span>
+                <button className="project-pill-btn" onClick={() => setModal('project')} aria-label="Switch or manage project">
+                  <Building2 size={15} className="project-pill-icon" aria-hidden="true" />
+                  <span className="project-pill-name">{activeProject.name}</span>
+                  <ChevronDown size={13} className="project-pill-arrow" aria-hidden="true" />
+                </button>
+              </div>
+            )}
           </div>
 
           <nav aria-label="Main">
@@ -323,21 +333,14 @@ export default function App() {
                   </button>
                 </li>
               ))}
-              {session && (
-                <li>
-                  <button className="nav-item" onClick={() => setModal('project')} aria-label="Switch or manage project">
-                    <Building2 size={18} aria-hidden="true" />
-                    <span>{activeProject ? activeProject.name : 'Projects'}</span>
-                  </button>
-                </li>
-              )}
             </ul>
           </nav>
 
           <div className="topbar-end">
             {session && activeProject && (
-              <button className="btn btn-soft btn-sm" onClick={() => setModal('project')}>
-                <UsersIcon size={14} /> Team ({projects.length > 0 ? activeProject.name : '0'})
+              <button className="btn btn-soft btn-sm team-manage-btn" onClick={() => setModal('project')} aria-label="Manage team and invites">
+                <UsersIcon size={15} />
+                <span>Team</span>
               </button>
             )}
             <button className="user-btn" onClick={() => setModal('settings')} aria-label="Settings">
@@ -349,27 +352,6 @@ export default function App() {
       </header>
 
       <main className="main">
-        {/* Project Header Bar for logged-in users with an active project */}
-        {session && activeProject && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 24px', background: 'var(--surface-2)', borderBottom: '1px solid var(--line)', marginBottom: '16px', borderRadius: 'var(--radius-sm)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className="badge" style={{ background: 'var(--brand-soft)', color: 'var(--brand)', fontWeight: 700, fontSize: '11px' }}>PROJECT</span>
-              <button
-                className="link-btn"
-                style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--ink)' }}
-                onClick={() => setModal('project')}
-              >
-                {activeProject.name} ▾
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="btn btn-soft btn-sm" onClick={() => setModal('project')}>
-                <UsersIcon size={14} /> Team & Invites
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* If logged in but has no project yet, show onboarding */}
         {session?.user && !loadingProjects && projects.length === 0 ? (
           <ProjectOnboarding
