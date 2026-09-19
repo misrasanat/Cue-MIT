@@ -78,7 +78,7 @@ export default function TeamBrain({ lessons, statusOf, onStart }) {
   return (
     <div className="page">
       <header className="page-head">
-        <h1>Team Brain</h1>
+        <h1>Team <span className="gradient-text">Brain</span></h1>
         <p className="muted">Ask about anything your teammates built. Answers come from their own notes, in plain English.</p>
       </header>
 
