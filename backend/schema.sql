@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS public.projects (
 
 -- 3. Project Members table
 CREATE TABLE IF NOT EXISTS public.project_members (
+    
     project_id UUID REFERENCES public.projects(id) ON DELETE CASCADE NOT NULL,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     role TEXT NOT NULL DEFAULT 'member',
@@ -40,7 +41,7 @@ CREATE TABLE IF NOT EXISTS public.invites (
 );
 
 -- 5. Scope cue_cards to projects
-ALTER TABLE public.cue_cards 
+ALTER TABLE public.cue_cards
 ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES public.projects(id) ON DELETE SET NULL;
 
 -- Query performance indexes
