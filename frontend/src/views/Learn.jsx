@@ -18,7 +18,7 @@ export default function Learn({ lessons, statusOf, onStart, onOpenSessions }) {
   return (
     <div className="page">
       <header className="page-head">
-        <h1>Learn</h1>
+        <h1>Let’s <span className="gradient-text">learn</span></h1>
         <p className="muted">Short lessons, one idea at a time. Pick anything that looks interesting.</p>
       </header>
 
