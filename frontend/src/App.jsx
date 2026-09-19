@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Home as HomeIcon, GraduationCap, Users, Settings as SettingsIcon } from 'lucide-react';
+import { Home as HomeIcon, GraduationCap, Users, Settings as SettingsIcon, Building2, UserPlus, Users as UsersIcon } from 'lucide-react';
 import { supabase } from './supabase';
 import { API_BASE } from './utils/api';
 import { buildLessons } from './utils/cards';
@@ -8,11 +8,13 @@ import Home from './views/Home';
 import Learn from './views/Learn';
 import TeamBrain from './views/TeamBrain';
 import Lesson from './views/Lesson';
+import ProjectOnboarding from './views/ProjectOnboarding';
 import SettingsModal from './modals/SettingsModal';
 import SessionsModal from './modals/SessionsModal';
 import AuthModal from './modals/AuthModal';
 import SetupGuideModal from './modals/SetupGuideModal';
 import DebugLogsModal from './modals/DebugLogsModal';
+import ProjectModal from './modals/ProjectModal';
 
 const NAV = [
   { id: 'home', label: 'Home', Icon: HomeIcon },
@@ -22,10 +24,14 @@ const NAV = [
 
 export default function App() {
   const [view, setView] = useState('home');
-  const [modal, setModal] = useState(null); // 'settings' | 'sessions' | 'auth' | 'setup' | 'debug'
+  const [modal, setModal] = useState(null); // 'settings' | 'sessions' | 'auth' | 'setup' | 'debug' | 'project'
   const [run, setRun] = useState(null); // { ids, mode } while a lesson is in progress
 
   const [session, setSession] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [activeProject, setActiveProject] = useState(null);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+
   const [cards, setCards] = useState([]);
   const [teamCards, setTeamCards] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -41,9 +47,54 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Check for invite token in URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const inviteToken = params.get('token');
+    if (inviteToken) {
+      setModal('project');
+    }
+  }, []);
+
+  const fetchProjects = useCallback(async () => {
+    if (!session?.user) {
+      setProjects([]);
+      setActiveProject(null);
+      return;
+    }
+    setLoadingProjects(true);
+    try {
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`${API_BASE}/user/projects?user_id=${session.user.id}`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data);
+        if (data.length > 0) {
+          setActiveProject((prev) => {
+            const found = data.find((p) => p.id === prev?.id);
+            return found || data[0];
+          });
+        } else {
+          setActiveProject(null);
+        }
+      }
+    } catch {
+      // offline
+    } finally {
+      setLoadingProjects(false);
+    }
+  }, [session?.user, token]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
+
   const fetchCards = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/cards`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const url = activeProject?.id
+        ? `${API_BASE}/cards?project_id=${activeProject.id}`
+        : `${API_BASE}/cards`;
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (res.ok) {
         setCards(await res.json());
         setOnline(true);
@@ -51,16 +102,19 @@ export default function App() {
     } catch {
       setOnline(false);
     }
-  }, [token]);
+  }, [token, activeProject?.id]);
 
   const fetchTeamCards = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/team-cards`);
+      const url = activeProject?.id
+        ? `${API_BASE}/team-cards?project_id=${activeProject.id}`
+        : `${API_BASE}/team-cards`;
+      const res = await fetch(url);
       if (res.ok) setTeamCards(await res.json());
     } catch {
       // Offline is already surfaced by the cards poll.
     }
-  }, []);
+  }, [activeProject?.id]);
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -131,8 +185,14 @@ export default function App() {
   const simulateSession = async () => {
     const post = (body) => fetch(`${API_BASE}/capture`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        ...(activeProject?.id ? { 'X-Project-Id': activeProject.id } : {})
+      },
+      body: JSON.stringify({
+        ...body,
+        ...(activeProject?.id ? { project_id: activeProject.id } : {})
+      }),
     });
     try {
       await post({
@@ -193,6 +253,14 @@ export default function App() {
             </li>
           ))}
           <li className="nav-spacer" aria-hidden="true" />
+          {session && (
+            <li>
+              <button className="nav-item" onClick={() => setModal('project')}>
+                <Building2 size={20} aria-hidden="true" />
+                <span>{activeProject ? activeProject.name : 'Projects'}</span>
+              </button>
+            </li>
+          )}
           <li>
             <button className="nav-item" onClick={() => setModal('settings')}>
               <SettingsIcon size={20} aria-hidden="true" />
@@ -203,34 +271,88 @@ export default function App() {
       </nav>
 
       <main className="main">
-        {view === 'home' && (
-          <Home
-            name={name}
-            lessons={lessons}
-            statusOf={progress.statusOf}
-            pendingSessions={pendingSessions}
-            apiKeyConfigured={apiKeyConfigured}
-            online={online}
-            onNavigate={navigate}
-            onStart={startLessons}
-            onOpenSessions={() => setModal('sessions')}
-            onOpenSetup={() => setModal('setup')}
-            onOpenSettings={() => setModal('settings')}
-          />
+        {/* Project Header Bar for logged in users */}
+        {session && activeProject && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 24px', background: 'var(--surface-2)', borderBottom: '1px solid var(--line)', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="badge" style={{ background: 'var(--brand-soft)', color: 'var(--brand)', fontWeight: 700, fontSize: '11px' }}>PROJECT</span>
+              <button
+                className="link-btn"
+                style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--ink)' }}
+                onClick={() => setModal('project')}
+              >
+                {activeProject.name} ▾
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="btn btn-soft btn-sm" onClick={() => setModal('project')}>
+                <UsersIcon size={14} /> Team & Invites
+              </button>
+            </div>
+          </div>
         )}
-        {view === 'learn' && (
-          <Learn
-            lessons={lessons}
-            statusOf={progress.statusOf}
-            onStart={startLessons}
-            onOpenSessions={() => setModal('sessions')}
+
+        {/* If logged in but has no project yet, show onboarding */}
+        {session?.user && !loadingProjects && projects.length === 0 ? (
+          <ProjectOnboarding
+            user={session.user}
+            token={token}
+            onProjectCreated={(newProj) => {
+              fetchProjects();
+              if (newProj) setActiveProject(newProj);
+            }}
           />
-        )}
-        {view === 'team' && (
-          <TeamBrain lessons={lessons} statusOf={progress.statusOf} onStart={startLessons} />
+        ) : (
+          <>
+            {view === 'home' && (
+              <Home
+                name={name}
+                lessons={lessons}
+                statusOf={progress.statusOf}
+                pendingSessions={pendingSessions}
+                apiKeyConfigured={apiKeyConfigured}
+                online={online}
+                onNavigate={navigate}
+                onStart={startLessons}
+                onOpenSessions={() => setModal('sessions')}
+                onOpenSetup={() => setModal('setup')}
+                onOpenSettings={() => setModal('settings')}
+              />
+            )}
+            {view === 'learn' && (
+              <Learn
+                lessons={lessons}
+                statusOf={progress.statusOf}
+                onStart={startLessons}
+                onOpenSessions={() => setModal('sessions')}
+              />
+            )}
+            {view === 'team' && (
+              <TeamBrain
+                lessons={lessons}
+                statusOf={progress.statusOf}
+                onStart={startLessons}
+                projectId={activeProject?.id}
+              />
+            )}
+          </>
         )}
       </main>
 
+      {modal === 'project' && (
+        <ProjectModal
+          user={session?.user}
+          token={token}
+          projects={projects}
+          activeProject={activeProject}
+          onSelectProject={(p) => setActiveProject(p)}
+          onProjectsChanged={(newProj) => {
+            fetchProjects();
+            if (newProj) setActiveProject(newProj);
+          }}
+          onClose={() => setModal(null)}
+        />
+      )}
       {modal === 'settings' && (
         <SettingsModal
           session={session}

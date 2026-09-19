@@ -26,7 +26,7 @@ function splitAnswer(text) {
   return { main, analogy: analogy.trim(), tip: tip.trim() };
 }
 
-export default function TeamBrain({ lessons, statusOf, onStart }) {
+export default function TeamBrain({ lessons, statusOf, onStart, projectId }) {
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const [response, setResponse] = useState(null);
@@ -61,7 +61,7 @@ export default function TeamBrain({ lessons, statusOf, onStart }) {
       const res = await fetch(`${API_BASE}/ask-team`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: text }),
+        body: JSON.stringify({ question: text, project_id: projectId }),
       });
       if (!res.ok) throw new Error('bad response');
       setResponse(await res.json());
