@@ -84,12 +84,42 @@ def ensure_server_ready():
     return False  # Server didn't come up in time — payload will be silently dropped
 
 
+def get_project_id():
+    """Resolves project_id from CUE_PROJECT_ID env var or nearest .cue/project.json."""
+    env_pid = os.environ.get("CUE_PROJECT_ID")
+    if env_pid:
+        return env_pid.strip()
+    try:
+        curr = Path.cwd()
+        for p in [curr, *curr.parents]:
+            proj_file = p / ".cue" / "project.json"
+            if proj_file.exists():
+                with open(proj_file, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                    pid = cfg.get("project_id")
+                    if pid:
+                        return str(pid).strip()
+    except Exception:
+        pass
+    return None
+
+
 def send_payload(data):
     try:
         headers = {"Content-Type": "application/json"}
         auth = get_auth_header()
         if auth:
             headers["Authorization"] = auth
+        project_id = get_project_id()
+        if project_id:
+            headers["X-Project-Id"] = project_id
+            try:
+                parsed = json.loads(data)
+                if isinstance(parsed, dict) and "project_id" not in parsed:
+                    parsed["project_id"] = project_id
+                    data = json.dumps(parsed)
+            except Exception:
+                pass
 
         req = urllib.request.Request(
             f"{SERVER_URL}/capture",
