@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cue-companion"
+version = "0.1.5"
+description = "Ambient Comprehension Companion & AI Cue Card Generator for Gemini CLI and Antigravity CLI"
+readme = "README.md"
+authors = [{ name = "Cue Team" }]
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.31.0",
+    "flask>=3.0.0",
+    "flask-cors>=4.0.0",
+    "google-genai>=0.1.1",
+    "python-dotenv>=1.0.0",
+    "supabase>=2.0.0",
+    "pyjwt>=2.8.0",
+]
+
+[project.scripts]
+cue = "backend.auth_cli:main"
+cue-setup = "backend.hook_installer:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*"]
