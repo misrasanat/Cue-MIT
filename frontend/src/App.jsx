@@ -24,7 +24,11 @@ import {
   LogIn,
   Terminal,
   Activity,
-  Layers
+  Layers,
+  Users,
+  Send,
+  MessageSquare,
+  BookOpen
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001';
@@ -37,6 +41,17 @@ export default function App() {
   const [showStandup, setShowStandup] = useState(false);
   const [standupBullets, setStandupBullets] = useState([]);
   
+  // Tab state: 'timeline' | 'team'
+  const [activeTab, setActiveTab] = useState('timeline');
+  const [teamQuestion, setTeamQuestion] = useState('');
+  const [isAskingTeam, setIsAskingTeam] = useState(false);
+  const [teamResponse, setTeamResponse] = useState(null);
+  const [teamCards, setTeamCards] = useState([]);
+  const [expandedTeamDrawers, setExpandedTeamDrawers] = useState({});
+  const [expandedTeamCards, setExpandedTeamCards] = useState({});
+  const [expandedSourceCardId, setExpandedSourceCardId] = useState(null);
+  const [teamQuizAnswers, setTeamQuizAnswers] = useState({});
+
   // Auth & User State
   const [session, setSession] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -65,6 +80,7 @@ export default function App() {
 
   useEffect(() => {
     fetchCards();
+    fetchTeamCards();
     checkConfig();
     const interval = setInterval(fetchCards, 2000);
     return () => clearInterval(interval);
@@ -106,6 +122,109 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchTeamCards = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/team-cards`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeamCards(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch team cards', e);
+    }
+  };
+
+  const handleAskTeam = async (e, customQ) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const q = customQ || teamQuestion;
+    if (!q || !q.trim()) return;
+    if (customQ) setTeamQuestion(customQ);
+    setIsAskingTeam(true);
+    setTeamResponse(null);
+    try {
+      const res = await fetch(`${API_BASE}/ask-team`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTeamResponse(data);
+      }
+    } catch (err) {
+      console.error('Ask team error:', err);
+    } finally {
+      setIsAskingTeam(false);
+    }
+  };
+
+  const toggleTeamDrawer = (id) => {
+    setExpandedTeamDrawers(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleTeamCard = (id) => {
+    setExpandedTeamCards(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleSourceCard = (id) => {
+    setExpandedSourceCardId(prev => (prev === id ? null : id));
+  };
+
+  const handleSelectTeamQuiz = (cardId, optionIndex) => {
+    setTeamQuizAnswers(prev => ({ ...prev, [cardId]: optionIndex }));
+  };
+
+  const DEMO_QUESTIONS = [
+    { label: "🚗 Why pause between payment retries?", q: "Why pause between payment retries?" },
+    { label: "💳 How do we avoid double-charging?", q: "Why do we cache idempotency keys for 24 hours to prevent double billing?" },
+    { label: "⚡ What if Stripe crashes?", q: "What is the payment circuit breaker for?" },
+    { label: "❌ Which payment errors fail right away?", q: "How does Sam classify payment errors?" }
+  ];
+
+  const renderAnswerContent = (text) => {
+    if (!text) return null;
+
+    let mainText = text;
+    let analogy = '';
+    let tip = '';
+
+    if (mainText.includes('\n\n💡 Rule of Thumb:')) {
+      const parts = mainText.split('\n\n💡 Rule of Thumb:');
+      mainText = parts[0];
+      tip = parts[1].trim();
+    }
+
+    if (mainText.includes('\n\n🧩 In Simple Terms:')) {
+      const parts = mainText.split('\n\n🧩 In Simple Terms:');
+      mainText = parts[0];
+      analogy = parts[1].trim();
+    }
+
+    const cleanRationale = mainText.replace(/^(Sam's Rationale:|Rationale:)\s*/i, '').trim();
+
+    return (
+      <div className="team-answer-body">
+        <div className="team-answer-main">
+          <span className="author-quote-label">Sam's Explanation:</span> {cleanRationale}
+        </div>
+
+        {analogy && (
+          <div className="team-answer-analogy-box">
+            <span className="analogy-badge">🧩 In Simple Terms</span>
+            <span className="analogy-text">{analogy}</span>
+          </div>
+        )}
+
+        {tip && (
+          <div className="team-answer-tip-box">
+            <span className="tip-badge">💡 Key Rule</span>
+            <span className="tip-text">{tip}</span>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const handleSaveApiKey = async (e) => {
@@ -216,46 +335,64 @@ export default function App() {
           <div className="brand-logo">C</div>
           <div>
             <div className="brand-title">Cue</div>
-            <div className="brand-subtitle">Ambient Comprehension Companion</div>
+            <div className="brand-subtitle">Plain-English Code Explainer</div>
           </div>
         </div>
 
         <div className="header-actions">
           <div className="status-badge" style={!apiKeyConfigured ? { background: 'rgba(245, 158, 11, 0.1)', color: '#fbbf24', borderColor: 'rgba(245, 158, 11, 0.2)' } : {}}>
             <span className="pulse-dot" style={!apiKeyConfigured ? { background: '#f59e0b', boxShadow: '0 0 8px #f59e0b' } : {}}></span> 
-            {apiKeyConfigured ? 'Gemini 2.0 Connected' : 'Mock Mode (Set API Key)'}
+            {apiKeyConfigured ? 'AI Explainer Active' : 'Demo Mode (Mock Data)'}
           </div>
 
-          <button className="btn btn-secondary" style={{ borderColor: 'rgba(129, 140, 248, 0.4)', color: '#818cf8' }} onClick={() => setShowSessionsModal(true)}>
-            <Layers size={16} /> Sessions
+          <button className="btn btn-secondary" style={{ borderColor: 'rgba(129, 140, 248, 0.4)', color: '#818cf8' }} onClick={() => setShowSessionsModal(true)} title="View background captured sessions">
+            <Layers size={15} /> Sessions
           </button>
 
-          <button className="btn btn-secondary" style={{ borderColor: 'rgba(52, 211, 153, 0.3)', color: '#34d399' }} onClick={() => setShowDebugModal(true)}>
-            <Activity size={16} /> Debug Stream
+          <button className="btn btn-secondary" onClick={handleToggleStandup} title="Quick speaking points for team meetings">
+            <ShieldCheck size={15} /> Meeting Cheat Sheet
           </button>
 
           <button className="btn btn-secondary" style={{ borderColor: 'rgba(99, 102, 241, 0.4)', background: 'rgba(99, 102, 241, 0.08)' }} onClick={() => setShowSetupModal(true)}>
-            <Terminal size={16} className="text-indigo-400" /> Connect CLI
+            <Terminal size={15} className="text-indigo-400" /> Connect Terminal
           </button>
 
           <button className="btn btn-secondary" onClick={() => setShowAuthModal(true)}>
-            {session ? <User size={16} className="text-indigo-400" /> : <LogIn size={16} />}
-            {session ? session.user.email.split('@')[0] : 'Log In / Sign Up'}
-          </button>
-
-          <button className="btn btn-secondary" onClick={handleToggleStandup}>
-            <ShieldCheck size={16} /> Standup Prep
+            {session ? <User size={15} className="text-indigo-400" /> : <LogIn size={15} />}
+            {session ? session.user.email.split('@')[0] : 'Log In'}
           </button>
 
           <button className="btn btn-secondary" onClick={() => setShowSettings(true)} title="Settings">
-            <Settings size={16} /> Settings
+            <Settings size={15} /> Settings
           </button>
 
-          <button className="btn btn-ghost" onClick={handleReset} title="Reset timeline">
-            <RotateCcw size={16} />
+          <button className="btn btn-ghost" style={{ borderColor: 'rgba(52, 211, 153, 0.2)', color: '#34d399' }} onClick={() => setShowDebugModal(true)} title="View background activity logs">
+            <Activity size={15} />
+          </button>
+
+          <button className="btn btn-ghost" onClick={handleReset} title="Clear cards">
+            <RotateCcw size={15} />
           </button>
         </div>
       </header>
+
+      {/* Navigation Tabs */}
+      <div className="tab-nav">
+        <button 
+          className={`tab-btn ${activeTab === 'timeline' ? 'active' : ''}`}
+          onClick={() => setActiveTab('timeline')}
+        >
+          <Sparkles size={15} /> Live Code Explainer
+          {cards.length > 0 && <span className="tab-counter">{cards.length}</span>}
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 'team' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('team'); fetchTeamCards(); }}
+        >
+          <Users size={15} /> Ask Teammates (Sam)
+          <span className="tab-pill">Payment Cheat Sheet</span>
+        </button>
+      </div>
 
       {/* Debug Stream Modal */}
       {showDebugModal && (
@@ -348,24 +485,28 @@ export default function App() {
         </div>
       )}
 
-      {/* Standup Prep Banner */}
-      {showStandup && (
-        <div className="standup-banner">
-          <div className="standup-header">
-            <div className="standup-title">
-              <Zap size={18} /> Standup Defense Bullet Points
+      {/* Active Tab View */}
+      {activeTab === 'timeline' ? (
+        <>
+          {/* Standup Prep Banner */}
+          {showStandup && (
+            <div className="standup-banner">
+              <div className="standup-header">
+                <div className="standup-title">
+                  <Zap size={18} /> Meeting Cheat Sheet (Standup Talking Points)
+                </div>
+                <button className="btn btn-ghost" onClick={() => setShowStandup(false)}>×</button>
+              </div>
+              <p className="standup-desc">Use these simple bullet points to explain what was built in team meetings:</p>
+              <ul className="standup-bullets">
+                {standupBullets.map((bullet, idx) => (
+                  <li key={idx} className="standup-bullet-item">
+                    <span>{bullet}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <button className="btn btn-ghost" onClick={() => setShowStandup(false)}>×</button>
-          </div>
-          <ul className="standup-bullets">
-            {standupBullets.map((bullet, idx) => (
-              <li key={idx} className="standup-bullet-item">
-                <span>{bullet}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+          )}
 
       {/* Timeline Section */}
       {cards.length === 0 ? (
@@ -506,6 +647,293 @@ export default function App() {
               </div>
             );
           })}
+        </div>
+      )}
+        </>
+      ) : (
+        <div className="team-pool-view">
+          {/* Novice-Friendly Hero Banner */}
+          <div className="team-hero">
+            <div className="team-hero-header">
+              <div className="team-hero-top-row">
+                <h2 className="team-hero-title">
+                  <Users size={18} className="text-indigo-400" />
+                  <span>Ask Sam: Why was this code built this way?</span>
+                </h2>
+                <span className="team-hero-badge">
+                  Teammate Cheat Sheet
+                </span>
+              </div>
+              <p className="team-hero-desc">
+                Don't know why a file exists or what an architecture pattern does? Ask in plain English and Cue will explain Sam's decisions without confusing developer jargon.
+              </p>
+            </div>
+
+            {/* Chat / Query Input */}
+            <form onSubmit={handleAskTeam} className="team-query-form">
+              <div className="team-input-wrapper">
+                <MessageSquare size={16} className="team-input-icon" />
+                <input
+                  type="text"
+                  className="team-input-field"
+                  placeholder="e.g. Why do we pause before retrying a payment?"
+                  value={teamQuestion}
+                  onChange={(e) => setTeamQuestion(e.target.value)}
+                />
+                <button 
+                  type="submit" 
+                  className="btn btn-primary team-submit-btn" 
+                  disabled={isAskingTeam || !teamQuestion.trim()}
+                >
+                  {isAskingTeam ? (
+                    <span>Explaining...</span>
+                  ) : (
+                    <>
+                      <Send size={14} /> Ask Cue
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            {/* Beginner Quick Questions */}
+            <div className="team-prompt-chips">
+              <span className="chips-label">Try asking:</span>
+              {DEMO_QUESTIONS.map((item, idx) => (
+                <button 
+                  key={idx}
+                  type="button" 
+                  className="prompt-chip" 
+                  onClick={() => handleAskTeam(null, item.q)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Synthesized Answer Box */}
+          {teamResponse && (
+            <div className="team-answer-card">
+              <div className="team-answer-header">
+                <div className="team-answer-badge">
+                  <Sparkles size={13} /> Plain-English Answer from Sam's Notes
+                </div>
+                {teamResponse.sources && (
+                  <span className="sources-count-badge">
+                    Grounded in {teamResponse.sources.length} Code Card{teamResponse.sources.length === 1 ? '' : 's'}
+                  </span>
+                )}
+              </div>
+
+              {renderAnswerContent(teamResponse.answer)}
+
+              {/* Compact Referenced Source Citations */}
+              {teamResponse.sources && teamResponse.sources.length > 0 && (
+                <div className="team-sources-section">
+                  <div className="sources-header-bar">
+                    <span className="sources-label">
+                      <BookOpen size={12} /> Source File:
+                    </span>
+                    <div className="sources-pills-list">
+                      {teamResponse.sources.map((src) => {
+                        const isSrcExpanded = expandedSourceCardId === src.id;
+                        return (
+                          <div key={src.id} className="compact-source-item">
+                            <button 
+                              type="button" 
+                              className={`source-chip-btn ${isSrcExpanded ? 'active' : ''}`}
+                              onClick={() => toggleSourceCard(src.id)}
+                            >
+                              <FileCode size={12} />
+                              <span className="src-file">{src.file}</span>
+                              <span className="src-author">({src.author || 'Sam'})</span>
+                              <span className="src-arrow">{isSrcExpanded ? '▲ Hide Code Details' : '▼ View Code Details'}</span>
+                            </button>
+                            {isSrcExpanded && (
+                              <div className="source-expanded-drawer">
+                                <div className="source-drawer-row">
+                                  <strong>Technical Decision:</strong> {src.decision}
+                                </div>
+                                <div className="source-drawer-row">
+                                  <strong>Original Reason:</strong> {src.why}
+                                </div>
+                                {src.mentor_tip && (
+                                  <div className="source-drawer-tip">
+                                    💡 <strong>Rule:</strong> {src.mentor_tip}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Browse All Team Cards (Cheat Sheet) */}
+          <div className="team-all-cards-section">
+            <div className="team-all-cards-header">
+              <div className="team-all-cards-title-row">
+                <h3>
+                  <BookOpen size={16} /> Sam's Codebase Cheat Sheet
+                </h3>
+                <span className="pool-count-pill">{teamCards.length} key concepts</span>
+              </div>
+              <span className="team-section-subtitle">
+                Click any concept below to see what it does in simple terms:
+              </span>
+            </div>
+
+            <div className="team-cards-list">
+              {teamCards.map((card) => {
+                const isCardExpanded = expandedTeamCards[card.id];
+                const isTradeoffExpanded = expandedTeamDrawers[card.id];
+                const selectedQuiz = teamQuizAnswers[card.id];
+                const categoryClass = `cat-${card.category || 'architecture'}`;
+
+                return (
+                  <div key={card.id} className={`team-history-card ${isCardExpanded ? 'is-expanded' : 'is-collapsed'}`}>
+                    {/* Compact Summary Header Row (Clickable) */}
+                    <div 
+                      className="team-card-summary-row"
+                      onClick={() => toggleTeamCard(card.id)}
+                    >
+                      <div className="team-card-summary-left">
+                        <span className={`category-chip ${categoryClass}`}>
+                          {card.category || 'architecture'}
+                        </span>
+                        <span className="file-chip">
+                          <FileCode size={12} /> {card.file}
+                        </span>
+                        <span className="team-card-decision-summary" title={card.plain_title || card.decision}>
+                          {card.plain_title || card.decision}
+                        </span>
+                      </div>
+
+                      <div className="team-card-summary-right">
+                        <span className="author-chip compact">
+                          <User size={11} /> {card.author || 'Sam'}
+                        </span>
+                        <span className="summary-expand-indicator">
+                          {isCardExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Detailed Body (Revealed on Click) */}
+                    {isCardExpanded && (
+                      <div className="team-card-expanded-body">
+                        {/* Everyday Analogy if available */}
+                        {card.analogy && (
+                          <div className="card-analogy-box">
+                            <span className="analogy-badge">🧩 In Simple Terms</span>
+                            <span className="analogy-text">{card.analogy}</span>
+                          </div>
+                        )}
+
+                        <div className="card-why">
+                          <strong>Why Sam Built This:</strong> {card.why}
+                        </div>
+
+                        {card.mentor_tip && (
+                          <div className="card-mentor-tip">
+                            <span className="mentor-tip-badge">💡 Plain-English Rule</span>
+                            <span className="mentor-tip-text">{card.mentor_tip}</span>
+                          </div>
+                        )}
+
+                        <div className="card-technical-details">
+                          <span className="tech-badge">Technical Decision:</span>
+                          <span className="tech-text">{card.decision}</span>
+                        </div>
+
+                        {/* Tradeoffs Accordion */}
+                        {card.alternatives && card.alternatives.length > 0 && (
+                          <>
+                            <button 
+                              className="tradeoff-toggle"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleTeamDrawer(card.id);
+                              }}
+                            >
+                              <span>Other Ways Sam Could Have Done It ({card.alternatives.length})</span>
+                              {isTradeoffExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                            </button>
+
+                            {isTradeoffExpanded && (
+                              <div className="tradeoff-drawer">
+                                {card.alternatives.map((alt, idx) => (
+                                  <div key={idx} className="alt-option-card">
+                                    <div className="alt-option-title">Option {idx + 1}: {alt.option}</div>
+                                    <div className="pros-cons-grid">
+                                      <ul className="pro-list">
+                                        {alt.pros?.map((pro, pIdx) => (
+                                          <li key={pIdx} className="pro-item">
+                                            <CheckCircle2 size={13} /> {pro}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                      <ul className="con-list">
+                                        {alt.cons?.map((con, cIdx) => (
+                                          <li key={cIdx} className="con-item">
+                                            <XCircle size={13} /> {con}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* Interactive Comprehension Quiz */}
+                        {card.quiz && (
+                          <div className="quiz-container">
+                            <div className="quiz-question">
+                              <HelpCircle size={14} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} />
+                              Quick Check: {card.quiz.question}
+                            </div>
+                            <div className="quiz-options">
+                              {card.quiz.options?.map((opt, optIdx) => {
+                                const isSelected = selectedQuiz === optIdx;
+                                const isCorrect = optIdx === card.quiz.correct_index;
+                                let btnClass = "quiz-option-btn";
+                                if (selectedQuiz !== undefined) {
+                                  if (isCorrect) btnClass += " correct";
+                                  else if (isSelected && !isCorrect) btnClass += " wrong";
+                                }
+                                return (
+                                  <button
+                                    key={optIdx}
+                                    className={btnClass}
+                                    disabled={selectedQuiz !== undefined}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSelectTeamQuiz(card.id, optIdx);
+                                    }}
+                                  >
+                                    {opt}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>

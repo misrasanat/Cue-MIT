@@ -13,6 +13,7 @@ Key Responsibilities:
 """
 
 import os
+import re
 import uuid
 import json
 import hashlib
@@ -30,6 +31,7 @@ from supabase_client import (
     save_cue_card_to_db,
     get_user_cue_cards,
 )
+from seed_data import SAM_CUE_CARDS
 
 # Load environment variables from .env if present
 load_dotenv(override=True)
@@ -91,6 +93,17 @@ Otherwise, generate a JSON object matching this schema:
     "correct_index": 0
   }
 }
+"""
+
+ASK_TEAM_SYSTEM_INSTRUCTION = """You are Cue, a friendly AI mentor helping a novice/intern developer understand their teammate's codebase.
+The user is a beginner and needs minimal, clear, plain-English explanations without confusing technical jargon.
+
+RULES:
+1. Explain technical concepts simply using plain English. If mentioning a technical concept (like jitter or circuit breaker), explain what it actually does in 1 easy sentence.
+2. Include a simple real-world analogy or everyday comparison (e.g. 'Think of this like...').
+3. Attribute directly to the teammate (e.g. 'Sam set this up because...').
+4. Keep the total answer to 2-3 short, friendly sentences.
+5. Ground strictly in the provided cards.
 """
 
 # ---------------------------------------------------------------------------
@@ -489,6 +502,167 @@ def standup():
         bullets.append(f"• {decision} — {why}")
     
     return jsonify({"bullets": bullets})
+
+def get_all_collective_cards():
+    """Returns all cue cards in the team pool (Sam's seeded profile + live cards)."""
+    pool = []
+    # 1. Sam's pre-seeded historical cards
+    for sc in SAM_CUE_CARDS:
+        pool.append(dict(sc))
+
+    # 2. Any cards in server memory (attributed to current user)
+    for c in cards:
+        if not any(existing.get("id") == c.get("id") for existing in pool):
+            card_copy = dict(c)
+            if "author" not in card_copy:
+                card_copy["author"] = "You (Local Dev)"
+            pool.append(card_copy)
+
+    return pool
+
+def retrieve_relevant_cards(question: str, candidate_cards: list, max_results: int = 3):
+    """Keyword-based search over collective cue cards for hackathon retrieval."""
+    if not question or not candidate_cards:
+        return []
+
+    words = re.findall(r'\b[a-zA-Z0-9]+\b', question.lower())
+    stopwords = {
+        'why', 'did', 'the', 'this', 'that', 'way', 'how', 'is', 'a', 'an', 'to', 'in',
+        'and', 'for', 'of', 'on', 'with', 'do', 'does', 'what', 'can', 'you', 'tell',
+        'me', 'about', 'structure', 'write', 'code', 'file', 'logic', 'our', 'we', 'he', 'she', 'use',
+        'work', 'works', 'there', 'they', 'them'
+    }
+    keywords = [w for w in words if w not in stopwords and len(w) > 2]
+    if not keywords:
+        return []
+
+    scored = []
+    for card in candidate_cards:
+        score = 0
+        file_text = str(card.get("file", "")).lower()
+        author_text = str(card.get("author", "")).lower()
+        decision_text = str(card.get("decision", "")).lower()
+        plain_title_text = str(card.get("plain_title", "")).lower()
+        why_text = str(card.get("why", "")).lower()
+        analogy_text = str(card.get("analogy", "")).lower()
+        mentor_text = str(card.get("mentor_tip", "")).lower()
+        category_text = str(card.get("category", "")).lower()
+
+        alt_texts = []
+        for alt in card.get("alternatives", []):
+            if isinstance(alt, dict):
+                alt_texts.append(str(alt.get("option", "")).lower())
+                alt_texts.extend([str(p).lower() for p in alt.get("pros", [])])
+                alt_texts.extend([str(c).lower() for c in alt.get("cons", [])])
+        alts_combined = " ".join(alt_texts)
+
+        for kw in keywords:
+            pattern = r'\b' + re.escape(kw)
+            if re.search(pattern, file_text):
+                score += 5
+            elif re.search(pattern, plain_title_text) or re.search(pattern, decision_text):
+                score += 4
+            elif re.search(pattern, why_text) or re.search(pattern, analogy_text):
+                score += 3
+            elif re.search(pattern, author_text):
+                score += 2
+            elif re.search(pattern, mentor_text) or re.search(pattern, category_text) or re.search(pattern, alts_combined):
+                score += 1
+
+        if score > 0:
+            scored.append((score, card))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [card for _, card in scored[:max_results]]
+
+@app.route("/team-cards", methods=["GET"])
+def get_team_cards():
+    """Returns the collective pool of cards across all teammates (including Sam)."""
+    return jsonify(get_all_collective_cards())
+
+@app.route("/ask-team", methods=["POST"])
+def ask_team():
+    """
+    Collective Knowledge Pool query endpoint.
+    Retrieves matching cards across team members and synthesizes a grounded answer.
+    """
+    data = request.get_json(silent=True) or {}
+    question = data.get("question", "").strip()
+
+    if not question:
+        return jsonify({"error": "Missing question in request body"}), 400
+
+    all_cards = get_all_collective_cards()
+    matched_cards = retrieve_relevant_cards(question, all_cards, max_results=2)
+
+    if not matched_cards:
+        return jsonify({
+            "answer": "I couldn't find any architectural decisions or Cue Cards in the team pool matching your question. Try asking about payment retry logic, backoff jitter, error classification, idempotency keys, or circuit breakers.",
+            "sources": [],
+            "query": question
+        })
+
+    # Grounded synthesis with Gemini if client is active
+    if client:
+        cards_context = []
+        for c in matched_cards:
+            cards_context.append({
+                "author": c.get("author", "Team Member"),
+                "file": c.get("file"),
+                "timestamp": c.get("timestamp"),
+                "decision": c.get("decision"),
+                "why": c.get("why"),
+                "mentor_tip": c.get("mentor_tip"),
+                "alternatives": c.get("alternatives", [])
+            })
+
+        prompt = f"""Question from team member:
+"{question}"
+
+Grounded Historical Team Cards:
+{json.dumps(cards_context, indent=2)}
+
+Please provide a grounded, concise answer channeling the original author's stated reasoning:"""
+
+        try:
+            from google.genai import types
+            model_name = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=ASK_TEAM_SYSTEM_INSTRUCTION
+                )
+            )
+            answer_text = response.text.strip()
+            return jsonify({
+                "answer": answer_text,
+                "sources": matched_cards,
+                "query": question,
+                "grounded": True
+            })
+        except Exception as e:
+            print(f"[Ask-Team Warning] Gemini API call failed: {e}. Falling back to structured synthesis.")
+
+    # Graceful fallback synthesis (offline or when API key is missing)
+    primary = matched_cards[0]
+    author = primary.get("author", "Sam")
+    why = primary.get("why", "")
+    tip = primary.get("mentor_tip", "")
+    analogy = primary.get("analogy", "")
+
+    fallback_answer = f"{author}'s Rationale: {why}"
+    if analogy:
+        fallback_answer += f"\n\n🧩 In Simple Terms: {analogy}"
+    if tip:
+        fallback_answer += f"\n\n💡 Rule of Thumb: {tip}"
+
+    return jsonify({
+        "answer": fallback_answer,
+        "sources": matched_cards,
+        "query": question,
+        "grounded": True
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
