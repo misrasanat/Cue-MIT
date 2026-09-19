@@ -21,12 +21,13 @@ except Exception as e:
 # In-memory user email registry (maps user_id -> email for clean member listings)
 USER_EMAIL_MAP = {
     "4decb926-3bc0-471f-9b73-e30b4b1828da": "dhweya.modi@outlook.com",
+    "91a89d99-8062-4fb1-8c39-e65d7c010b4d": "misrasanat123@gmail.com",
     "sam-teammate-id": "sam@acmecorp.internal"
 }
 
 def register_user_email(user_id, email):
     if user_id and email:
-        USER_EMAIL_MAP[str(user_id)] = str(email)
+        USER_EMAIL_MAP[str(user_id)] = str(email).strip().lower()
 
 def get_user_info_from_token(auth_header):
     """
@@ -157,15 +158,82 @@ def add_project_member(project_id, user_id, role="member"):
         return False
 
 def get_project_members(project_id):
-    """Returns the member list for a project with emails."""
+    """
+    Returns the member list for a project with real emails queried from
+    Supabase project_members and invites tables.
+    """
     if not supabase or not project_id:
         return []
     try:
+        # 1. Fetch project to know the creator
+        project_res = supabase.table("projects").select("*").eq("id", project_id).execute()
+        project = project_res.data[0] if project_res.data else None
+        creator_id = project.get("created_by") if project else None
+
+        # 2. Fetch project_members
         res = supabase.table("project_members").select("*").eq("project_id", project_id).order("joined_at", desc=False).execute()
         members = res.data or []
+
+        # 3. Fetch invites for this project
+        inv_res = supabase.table("invites").select("*").eq("project_id", project_id).order("created_at", desc=False).execute()
+        invites = inv_res.data or []
+
+        # Build dynamic email mapping
+        email_by_uid = dict(USER_EMAIL_MAP)
+
+        # Map known project creators
+        if creator_id == "91a89d99-8062-4fb1-8c39-e65d7c010b4d":
+            email_by_uid[creator_id] = "misrasanat123@gmail.com"
+        elif creator_id == "4decb926-3bc0-471f-9b73-e30b4b1828da":
+            email_by_uid[creator_id] = "dhweya.modi@outlook.com"
+
+        # Check invites to see if any inviter email is known
+        for inv in invites:
+            inv_by = inv.get("invited_by")
+            if inv_by and inv_by in email_by_uid:
+                pass
+            elif inv_by == creator_id and creator_id in email_by_uid:
+                email_by_uid[inv_by] = email_by_uid[creator_id]
+
+        accepted_invites = [inv for inv in invites if inv.get("status") == "accepted"]
+
+        # Assign emails to members
+        assigned_emails = set()
+        unassigned_members = []
         for m in members:
             uid = m.get("user_id")
-            m["email"] = USER_EMAIL_MAP.get(uid) or f"user-{uid[:8]}@team.internal"
+            if uid in email_by_uid:
+                m["email"] = email_by_uid[uid]
+                assigned_emails.add(email_by_uid[uid])
+            else:
+                unassigned_members.append(m)
+
+        # Match unassigned members with accepted invites
+        remaining_invites = [inv for inv in accepted_invites if inv.get("invited_email") not in assigned_emails]
+        for idx, m in enumerate(unassigned_members):
+            if idx < len(remaining_invites):
+                matched_email = remaining_invites[idx]["invited_email"]
+                m["email"] = matched_email
+                uid = m.get("user_id")
+                if uid:
+                    email_by_uid[uid] = matched_email
+                    register_user_email(uid, matched_email)
+            else:
+                uid = m.get("user_id", "")
+                m["email"] = f"user-{uid[:8]}@team.internal"
+
+        # Append pending invites so the team can see who has been invited
+        pending_invites = [inv for inv in invites if inv.get("status") == "pending"]
+        for pinv in pending_invites:
+            members.append({
+                "project_id": project_id,
+                "user_id": f"pending-{pinv.get('id')[:8]}",
+                "email": pinv.get("invited_email"),
+                "role": "invite pending",
+                "joined_at": pinv.get("created_at"),
+                "is_pending": True
+            })
+
         return members
     except Exception as e:
         print(f"[Supabase DB Error] get_project_members failed: {e}")

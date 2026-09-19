@@ -65,7 +65,7 @@ export default function ProjectModal({
       const orgRes = await fetch(`${API_BASE}/organizations`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ name: orgName.trim(), user_id: user?.id })
+        body: JSON.stringify({ name: orgName.trim(), user_id: user?.id, email: user?.email })
       });
       if (!orgRes.ok) throw new Error('Failed to create organization');
       const org = await orgRes.json();
@@ -74,7 +74,7 @@ export default function ProjectModal({
       const projRes = await fetch(`${API_BASE}/organizations/${org.id}/projects`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ name: projectName.trim(), user_id: user?.id })
+        body: JSON.stringify({ name: projectName.trim(), user_id: user?.id, email: user?.email })
       });
       if (!projRes.ok) throw new Error('Failed to create project');
       const proj = await projRes.json();
@@ -103,7 +103,7 @@ export default function ProjectModal({
       const res = await fetch(`${API_BASE}/projects/${activeProject.id}/invite`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ email: inviteEmail.trim(), user_id: user?.id })
+        body: JSON.stringify({ email: inviteEmail.trim(), user_id: user?.id, inviter_email: user?.email })
       });
       if (!res.ok) throw new Error('Failed to generate invite');
       const data = await res.json();
@@ -137,7 +137,7 @@ export default function ProjectModal({
       const res = await fetch(`${API_BASE}/invites/${tokenToUse}/accept`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ user_id: user?.id })
+        body: JSON.stringify({ user_id: user?.id, email: user?.email })
       });
       if (!res.ok) {
         const err = await res.json();
@@ -231,13 +231,77 @@ export default function ProjectModal({
                 <Loader2 size={14} className="spin" /> Loading members...
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {members.map((m) => (
-                  <div key={m.user_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', background: 'var(--surface)', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)' }}>
-                    <span style={{ fontWeight: 600 }}>{m.email}</span>
-                    <span className="badge" style={{ textTransform: 'capitalize' }}>{m.role || 'member'}</span>
-                  </div>
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {members.map((m) => {
+                  const isYou = (user?.id && m.user_id === user.id) || (user?.email && m.email === user.email);
+                  const isOwner = m.role === 'owner';
+                  const isPending = m.is_pending || m.role === 'invite pending';
+                  const initial = m.email ? m.email[0].toUpperCase() : 'U';
+
+                  return (
+                    <div
+                      key={m.user_id || m.email}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '13px',
+                        background: 'var(--surface)',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--line)',
+                        opacity: isPending ? 0.8 : 1
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            background: isOwner ? 'var(--grad)' : isPending ? 'rgba(245, 158, 11, 0.2)' : 'var(--surface-2)',
+                            color: isOwner ? '#fff' : isPending ? '#d97706' : 'var(--ink)',
+                            display: 'grid',
+                            placeItems: 'center',
+                            fontWeight: 700,
+                            fontSize: '12px'
+                          }}
+                        >
+                          {initial}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{m.email}</span>
+                            {isYou && (
+                              <span style={{ fontSize: '11px', color: 'var(--brand)', fontWeight: 700 }}>
+                                (You)
+                              </span>
+                            )}
+                          </div>
+                          {isPending && (
+                            <span style={{ fontSize: '11px', color: 'var(--ink-2)' }}>
+                              Invite sent · awaiting acceptance
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span
+                        className="badge"
+                        style={{
+                          textTransform: 'capitalize',
+                          background: isOwner ? 'var(--brand-soft)' : isPending ? 'rgba(245, 158, 11, 0.12)' : 'var(--surface-2)',
+                          color: isOwner ? 'var(--brand-strong)' : isPending ? '#d97706' : 'var(--ink-2)',
+                          border: isPending ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid transparent',
+                          fontWeight: 600,
+                          fontSize: '11.5px',
+                          padding: '3px 9px'
+                        }}
+                      >
+                        {m.role || 'member'}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>

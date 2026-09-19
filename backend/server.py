@@ -42,6 +42,7 @@ from supabase_client import (
     create_invite,
     get_invite,
     accept_invite,
+    register_user_email,
 )
 from seed_data import SAM_CUE_CARDS
 
@@ -540,9 +541,12 @@ def api_create_project(org_id):
         return jsonify({"error": "Project name is required"}), 400
 
     auth_header = request.headers.get("Authorization")
-    user_id, _ = get_user_info_from_token(auth_header)
+    user_id, token_email = get_user_info_from_token(auth_header)
     if not user_id:
         user_id = data.get("user_id")
+    creator_email = token_email or data.get("email") or data.get("user_email")
+    if user_id and creator_email:
+        register_user_email(user_id, creator_email)
 
     if not user_id:
         return jsonify({"error": "Unauthorized. Please log in first."}), 401
@@ -561,9 +565,12 @@ def api_create_project_invite(project_id):
         return jsonify({"error": "Invited email is required"}), 400
 
     auth_header = request.headers.get("Authorization")
-    user_id, _ = get_user_info_from_token(auth_header)
+    user_id, token_email = get_user_info_from_token(auth_header)
     if not user_id:
         user_id = data.get("user_id")
+    inviter_email = token_email or data.get("inviter_email")
+    if user_id and inviter_email:
+        register_user_email(user_id, inviter_email)
 
     if not user_id:
         return jsonify({"error": "Unauthorized. Please log in first."}), 401
@@ -586,10 +593,13 @@ def api_create_project_invite(project_id):
 @app.route("/invites/<token>/accept", methods=["POST"])
 def api_accept_invite(token):
     auth_header = request.headers.get("Authorization")
-    user_id, email = get_user_info_from_token(auth_header)
+    user_id, token_email = get_user_info_from_token(auth_header)
+    data = request.get_json(silent=True) or {}
     if not user_id:
-        data = request.get_json(silent=True) or {}
         user_id = data.get("user_id")
+    acceptor_email = token_email or data.get("email")
+    if user_id and acceptor_email:
+        register_user_email(user_id, acceptor_email)
 
     if not user_id:
         return jsonify({"error": "Unauthorized. Please log in first."}), 401
@@ -603,9 +613,12 @@ def api_accept_invite(token):
 @app.route("/user/projects", methods=["GET"])
 def api_get_user_projects():
     auth_header = request.headers.get("Authorization")
-    user_id, _ = get_user_info_from_token(auth_header)
+    user_id, token_email = get_user_info_from_token(auth_header)
     if not user_id:
         user_id = request.args.get("user_id")
+    req_email = token_email or request.args.get("email")
+    if user_id and req_email:
+        register_user_email(user_id, req_email)
 
     if not user_id:
         return jsonify([]), 200
