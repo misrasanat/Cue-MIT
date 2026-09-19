@@ -1,10 +1,11 @@
 import { ArrowRight, BookOpen, Users, Layers, WifiOff, Sparkles } from 'lucide-react';
 import ProgressRing from '../components/ProgressRing';
+import HeroArt from '../components/HeroArt';
 
 function greeting(name) {
   const h = new Date().getHours();
-  const part = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-  return name ? `${part}, ${name}` : part;
+  const word = h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening';
+  return <>Good <span className="gradient-text">{word}</span>{name ? `, ${name}` : ''}</>;
 }
 
 export default function Home({
@@ -33,35 +34,44 @@ export default function Home({
   } else if (due.length > 0) {
     hero = (
       <section className="hero">
+        <div className="hero-copy">
         <span className="eyebrow">Quick review</span>
         <h1>{due.length === 1 ? 'One idea is ready to revisit' : `${due.length} ideas are ready to revisit`}</h1>
         <p className="lede">About {Math.max(1, Math.round(due.length * 0.75))} min. Coming back to an idea just as it starts to fade is how it sticks for good.</p>
         <button className="btn btn-primary btn-lg" onClick={() => onStart(due.map((l) => l.id).slice(0, 5), 'review')}>
           Start review <ArrowRight size={18} />
         </button>
+        </div>
+        <HeroArt />
       </section>
     );
   } else if (fresh.length > 0) {
     const next = fresh.slice(0, 3);
     hero = (
       <section className="hero">
+        <div className="hero-copy">
         <span className="eyebrow">Up next</span>
         <h1>{next[0].title}</h1>
         <p className="lede">A short lesson, a quick check, then explain it in your own words. Under three minutes.</p>
         <button className="btn btn-primary btn-lg" onClick={() => onStart(next.map((l) => l.id), 'learn')}>
           Start learning <ArrowRight size={18} />
         </button>
+        </div>
+        <HeroArt />
       </section>
     );
   } else {
     hero = (
       <section className="hero">
+        <div className="hero-copy">
         <span className="eyebrow">All caught up</span>
         <h1>Nothing due right now</h1>
         <p className="lede">Nice work. Everything you’ve learned is scheduled to come back at the right moment. Meanwhile, ask the team brain something you’ve wondered about.</p>
         <button className="btn btn-primary btn-lg" onClick={() => onNavigate('team')}>
           Ask the team brain <ArrowRight size={18} />
         </button>
+        </div>
+        <HeroArt />
       </section>
     );
   }
@@ -98,6 +108,11 @@ export default function Home({
                   : 'Each idea you review gets a little more solid.'}
             </p>
           </div>
+          <dl className="stats">
+            <div><dd>{fresh.length}</dd><dt>To learn</dt></div>
+            <div><dd>{due.length}</dd><dt>To review</dt></div>
+            <div><dd>{solid}</dd><dt>Solid</dt></div>
+          </dl>
         </section>
 
         <section className="tile">

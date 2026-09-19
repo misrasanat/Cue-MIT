@@ -126,7 +126,7 @@ function LessonRun({ lesson, mode, position, progress, onExit, onFullLesson, onF
         {position.total > 1 && <span className="lesson-count">{position.index + 1} of {position.total}</span>}
       </div>
 
-      <div className="lesson-card" key={step}>
+      <div className={`lesson-card step-${step}`} key={step}>
         {step === 'idea' && (
           <>
             <span className="eyebrow">{friendlyCategory(lesson.category)}</span>
