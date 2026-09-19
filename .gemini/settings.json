@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "AfterTool": [
+      {
+        "matcher": "update_topic|write_file|replace",
+        "hooks": [
+          {
+            "name": "cue-capture",
+            "type": "command",
+            "command": "python backend/capture.py"
+          }
+        ]
+      }
+    ]
+  }
+}
