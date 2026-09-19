@@ -3,8 +3,8 @@ import { User, LogOut } from 'lucide-react';
 import { supabase } from '../supabase';
 import Modal from '../components/Modal';
 
-export default function AuthModal({ user, onClose, onAuthSuccess }) {
-  const [isSignUp, setIsSignUp] = useState(false);
+export default function AuthModal({ user, startInSignUp = false, onClose, onAuthSuccess }) {
+  const [isSignUp, setIsSignUp] = useState(startInSignUp);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
