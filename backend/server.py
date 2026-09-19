@@ -28,8 +28,20 @@ from hook_installer import install_global_hook
 from watcher import TranscriptWatcher
 from supabase_client import (
     get_user_id_from_token,
+    get_user_info_from_token,
     save_cue_card_to_db,
     get_user_cue_cards,
+    get_project_cue_cards,
+    create_organization,
+    get_organization,
+    create_project,
+    get_project,
+    get_user_projects,
+    add_project_member,
+    get_project_members,
+    create_invite,
+    get_invite,
+    accept_invite,
 )
 from seed_data import SAM_CUE_CARDS
 
@@ -165,12 +177,14 @@ def _session_for(session_id, source):
     })
 
 
-def record_session_event(session_id, event, tool_name, tool_input, tool_response):
+def record_session_event(session_id, event, tool_name, tool_input, tool_response, project_id=None):
     """Append an edit/command/intent event to its session log (no AI call)."""
     now = datetime.datetime.now()
     with sessions_lock:
         s = _session_for(session_id, event.get("source", "gemini_cli"))
         s["last_activity"] = now.isoformat(timespec="seconds")
+        if project_id:
+            s["project_id"] = project_id
         if tool_name == "update_topic":
             s["last_intent"] = tool_input.get("summary", "") or tool_input.get("strategic_intent", "")
         elif tool_name in EDIT_TOOLS:
@@ -324,6 +338,8 @@ def capture():
     tool_input = event.get("tool_input", {})
     tool_response = event.get("tool_response", {})
 
+    project_id = event.get("project_id") or request.headers.get("X-Project-Id")
+
     # Record telemetry log for live debugging stream
     log_entry = {
         "id": str(uuid.uuid4()),
@@ -331,6 +347,7 @@ def capture():
         "tool_name": tool_name,
         "session_id": session_id[:8],
         "user_id": user_id or "local_dev",
+        "project_id": project_id,
         "file_path": tool_input.get("file_path", ""),
         "summary": tool_input.get("summary") or tool_input.get("file_path") or f"Tool: {tool_name}",
         "raw_event": event
@@ -342,7 +359,7 @@ def capture():
     # Log only. Cards are generated on demand via POST /sessions/<id>/generate,
     # so no model call ever happens in the background here.
     if tool_name == "update_topic" or tool_name in EDIT_TOOLS or tool_name in COMMAND_TOOLS:
-        record_session_event(session_id, event, tool_name, tool_input, tool_response)
+        record_session_event(session_id, event, tool_name, tool_input, tool_response, project_id=project_id)
         return jsonify({"status": "logged", "session_id": session_id})
 
     return jsonify({"status": "ignored", "tool_name": tool_name})
@@ -417,9 +434,12 @@ def generate_session_cards(session_id):
         if card is None:
             skipped += 1
             continue
+        project_id = s.get("project_id") or request.headers.get("X-Project-Id")
+        if project_id:
+            card["project_id"] = project_id
         cards.append(card)
         if user_id:
-            save_cue_card_to_db(user_id, card)
+            save_cue_card_to_db(user_id, card, project_id=project_id)
         created.append(card)
 
     if newly_carded or newly_mocked:
@@ -440,6 +460,29 @@ def generate_session_cards(session_id):
 
 @app.route("/cards", methods=["GET"])
 def get_cards():
+    project_id = request.args.get("project_id")
+    if project_id:
+        db_cards = get_project_cue_cards(project_id)
+        if db_cards:
+            formatted_cards = []
+            for item in db_cards:
+                formatted_cards.append({
+                    "id": str(item.get("id")),
+                    "project_id": item.get("project_id"),
+                    "author": item.get("author_email") or "Teammate",
+                    "file": item.get("file_path"),
+                    "decision": item.get("decision"),
+                    "why": item.get("why"),
+                    "category": item.get("category"),
+                    "alternatives": item.get("alternatives", []),
+                    "quiz": item.get("quiz", {}),
+                    "timestamp": item.get("created_at")
+                })
+            return jsonify(formatted_cards)
+        matching_in_mem = [c for c in cards if c.get("project_id") == project_id]
+        if matching_in_mem:
+            return jsonify(matching_in_mem)
+
     auth_header = request.headers.get("Authorization")
     user_id = get_user_id_from_token(auth_header)
     if user_id:
@@ -450,6 +493,7 @@ def get_cards():
             for item in db_cards:
                 formatted_cards.append({
                     "id": str(item.get("id")),
+                    "project_id": item.get("project_id"),
                     "file": item.get("file_path"),
                     "decision": item.get("decision"),
                     "why": item.get("why"),
@@ -461,6 +505,131 @@ def get_cards():
             return jsonify(formatted_cards)
 
     return jsonify(cards)
+
+
+# ==============================================================================
+# Organizations, Projects, and Team Invites Endpoints
+# ==============================================================================
+
+@app.route("/organizations", methods=["POST"])
+def api_create_organization():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Organization name is required"}), 400
+
+    auth_header = request.headers.get("Authorization")
+    user_id, _ = get_user_info_from_token(auth_header)
+    if not user_id:
+        user_id = data.get("user_id")
+
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in first."}), 401
+
+    org = create_organization(name, user_id)
+    if not org:
+        return jsonify({"error": "Failed to create organization"}), 500
+    return jsonify(org), 201
+
+
+@app.route("/organizations/<org_id>/projects", methods=["POST"])
+def api_create_project(org_id):
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Project name is required"}), 400
+
+    auth_header = request.headers.get("Authorization")
+    user_id, _ = get_user_info_from_token(auth_header)
+    if not user_id:
+        user_id = data.get("user_id")
+
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in first."}), 401
+
+    project = create_project(org_id, name, user_id)
+    if not project:
+        return jsonify({"error": "Failed to create project"}), 500
+    return jsonify(project), 201
+
+
+@app.route("/projects/<project_id>/invite", methods=["POST"])
+def api_create_project_invite(project_id):
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"error": "Invited email is required"}), 400
+
+    auth_header = request.headers.get("Authorization")
+    user_id, _ = get_user_info_from_token(auth_header)
+    if not user_id:
+        user_id = data.get("user_id")
+
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in first."}), 401
+
+    invite = create_invite(project_id, email, user_id)
+    if not invite:
+        return jsonify({"error": "Failed to create invite"}), 500
+
+    token = invite["id"]
+    invite_url = f"http://localhost:5173/join?token={token}"
+    print(f"[Email Service Mock] Sending invite email to '{email}' for project '{project_id}'. Link: {invite_url}")
+
+    return jsonify({
+        "invite": invite,
+        "token": token,
+        "invite_url": invite_url
+    }), 201
+
+
+@app.route("/invites/<token>/accept", methods=["POST"])
+def api_accept_invite(token):
+    auth_header = request.headers.get("Authorization")
+    user_id, email = get_user_info_from_token(auth_header)
+    if not user_id:
+        data = request.get_json(silent=True) or {}
+        user_id = data.get("user_id")
+
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in first."}), 401
+
+    result, err = accept_invite(token, user_id)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify(result), 200
+
+
+@app.route("/user/projects", methods=["GET"])
+def api_get_user_projects():
+    auth_header = request.headers.get("Authorization")
+    user_id, _ = get_user_info_from_token(auth_header)
+    if not user_id:
+        user_id = request.args.get("user_id")
+
+    if not user_id:
+        return jsonify([]), 200
+
+    projects = get_user_projects(user_id)
+    return jsonify(projects), 200
+
+
+@app.route("/projects/<project_id>/members", methods=["GET"])
+def api_get_project_members(project_id):
+    members = get_project_members(project_id)
+    return jsonify(members), 200
+
+
+@app.route("/invites/<token>", methods=["GET"])
+def api_get_invite_details(token):
+    inv = get_invite(token)
+    if not inv:
+        return jsonify({"error": "Invite not found"}), 404
+    proj = get_project(inv["project_id"])
+    return jsonify({
+        "invite": inv,
+        "project": proj
+    }), 200
 
 @app.route("/reset", methods=["POST"])
 def reset():
@@ -503,20 +672,45 @@ def standup():
     
     return jsonify({"bullets": bullets})
 
-def get_all_collective_cards():
-    """Returns all cue cards in the team pool (Sam's seeded profile + live cards)."""
+def get_all_collective_cards(project_id=None):
+    """Returns all cue cards in the team pool, scoped to project_id or Sam's seeded profile."""
     pool = []
-    # 1. Sam's pre-seeded historical cards
-    for sc in SAM_CUE_CARDS:
-        pool.append(dict(sc))
 
-    # 2. Any cards in server memory (attributed to current user)
+    # 1. Real project cards from Supabase if project_id is provided
+    if project_id:
+        db_project_cards = get_project_cue_cards(project_id)
+        for c in db_project_cards:
+            pool.append({
+                "id": str(c.get("id")),
+                "project_id": c.get("project_id"),
+                "file": c.get("file_path"),
+                "decision": c.get("decision"),
+                "plain_title": c.get("decision", ""),
+                "why": c.get("why"),
+                "analogy": "",
+                "mentor_tip": "Captured during project development.",
+                "author": c.get("author_email") or "Teammate",
+                "author_role": "Team Contributor",
+                "category": c.get("category", "architecture"),
+                "alternatives": c.get("alternatives", []),
+                "quiz": c.get("quiz", {}),
+                "timestamp": c.get("created_at")
+            })
+
+    # 2. Live in-memory cards matching project_id
     for c in cards:
+        if project_id and c.get("project_id") != project_id:
+            continue
         if not any(existing.get("id") == c.get("id") for existing in pool):
             card_copy = dict(c)
             if "author" not in card_copy:
                 card_copy["author"] = "You (Local Dev)"
             pool.append(card_copy)
+
+    # 3. Fallback to Sam's pre-seeded historical cards if pool is empty or no project_id
+    if not pool:
+        for sc in SAM_CUE_CARDS:
+            pool.append(dict(sc))
 
     return pool
 
@@ -577,8 +771,9 @@ def retrieve_relevant_cards(question: str, candidate_cards: list, max_results: i
 
 @app.route("/team-cards", methods=["GET"])
 def get_team_cards():
-    """Returns the collective pool of cards across all teammates (including Sam)."""
-    return jsonify(get_all_collective_cards())
+    """Returns the collective pool of cards across all teammates (scoped to project_id)."""
+    project_id = request.args.get("project_id")
+    return jsonify(get_all_collective_cards(project_id=project_id))
 
 @app.route("/ask-team", methods=["POST"])
 def ask_team():
@@ -588,11 +783,12 @@ def ask_team():
     """
     data = request.get_json(silent=True) or {}
     question = data.get("question", "").strip()
+    project_id = data.get("project_id") or request.args.get("project_id")
 
     if not question:
         return jsonify({"error": "Missing question in request body"}), 400
 
-    all_cards = get_all_collective_cards()
+    all_cards = get_all_collective_cards(project_id=project_id)
     matched_cards = retrieve_relevant_cards(question, all_cards, max_results=2)
 
     if not matched_cards:
