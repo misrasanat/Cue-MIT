@@ -24,7 +24,7 @@ export default function ProjectOnboarding({ user, token, onProjectCreated }) {
       const orgRes = await fetch(`${API_BASE}/organizations`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ name: orgName.trim(), user_id: user?.id })
+        body: JSON.stringify({ name: orgName.trim(), user_id: user?.id, email: user?.email })
       });
       if (!orgRes.ok) throw new Error('Failed to create organization');
       const org = await orgRes.json();
@@ -33,7 +33,7 @@ export default function ProjectOnboarding({ user, token, onProjectCreated }) {
       const projRes = await fetch(`${API_BASE}/organizations/${org.id}/projects`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ name: projectName.trim(), user_id: user?.id })
+        body: JSON.stringify({ name: projectName.trim(), user_id: user?.id, email: user?.email })
       });
       if (!projRes.ok) throw new Error('Failed to create project');
       const proj = await projRes.json();
@@ -66,7 +66,7 @@ export default function ProjectOnboarding({ user, token, onProjectCreated }) {
       const res = await fetch(`${API_BASE}/invites/${tokenToUse}/accept`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ user_id: user?.id })
+        body: JSON.stringify({ user_id: user?.id, email: user?.email })
       });
       if (!res.ok) {
         const err = await res.json();

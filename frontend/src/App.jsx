@@ -82,7 +82,7 @@ export default function App() {
     setLoadingProjects(true);
     try {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const res = await fetch(`${API_BASE}/user/projects?user_id=${session.user.id}`, { headers });
+      const res = await fetch(`${API_BASE}/user/projects?user_id=${session.user.id}&email=${encodeURIComponent(session.user.email || '')}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setProjects(data);
