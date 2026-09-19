@@ -61,10 +61,12 @@ export default function Landing({ signedIn, onOpenApp, onSignUp, onLogIn, onGues
     <div className="landing" id="top">
       <header className="topbar">
         <div className="topbar-inner">
-          <a className="brand brand-grow" href="#top" aria-label="Cue home">
-            <span className="brand-mark" aria-hidden="true">C</span>
-            <span className="brand-name">Cue</span>
-          </a>
+          <div className="brand-zone">
+            <a className="brand" href="#top" aria-label="Cue home">
+              <span className="brand-mark" aria-hidden="true">C</span>
+              <span className="brand-name">Cue</span>
+            </a>
+          </div>
           <nav className="landing-links" aria-label="Sections">
             <a href="#why">Why Cue</a>
             <a href="#features">Features</a>
