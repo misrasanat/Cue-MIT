@@ -1,14 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Settings, User, Terminal, Layers, Activity, Key, Check, RotateCcw, Radio } from 'lucide-react';
+import { Settings, User, Terminal, Layers, Activity, Key, RotateCcw, Radio } from 'lucide-react';
 import Modal from '../components/Modal';
 import { LOCAL_API_BASE } from '../utils/api';
 import { timeAgo } from '../utils/cards';
 
-export default function SettingsModal({ session, apiKeyConfigured, onKeyChanged, onOpen, onStartOver, onClose }) {
-  const [apiKey, setApiKey] = useState(() => {
-    try { return localStorage.getItem('cue_gemini_api_key') || ''; } catch { return ''; }
-  });
-  const [status, setStatus] = useState('');
+export default function SettingsModal({ session, apiKeyConfigured, onOpen, onStartOver, onClose }) {
   const [confirming, setConfirming] = useState(false);
   const [share, setShare] = useState(null);
 
@@ -20,25 +16,6 @@ export default function SettingsModal({ session, apiKeyConfigured, onKeyChanged,
   if (share?.error) shareText = share.hint || 'Something is blocking sharing with your team.';
   else if (share?.last_ok) shareText = `Working. Last sent ${timeAgo(share.last_ok)}.`;
   else if (share) shareText = 'Nothing shared yet. Run cue link in a project folder, then code as usual.';
-
-  const saveKey = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${LOCAL_API_BASE}/config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: apiKey }),
-      });
-      if (!res.ok) throw new Error('save failed');
-      const data = await res.json();
-      try { localStorage.setItem('cue_gemini_api_key', apiKey); } catch { /* not persisted */ }
-      onKeyChanged(data.api_key_configured);
-      setStatus(data.api_key_configured ? 'Saved. Lessons will now be written about your code.' : 'Key removed.');
-    } catch {
-      setStatus('Couldn’t save. Is Cue’s helper running?');
-    }
-    setTimeout(() => setStatus(''), 4000);
-  };
 
   return (
     <Modal title="Settings" icon={Settings} onClose={onClose}>
@@ -73,28 +50,16 @@ export default function SettingsModal({ session, apiKeyConfigured, onKeyChanged,
         </div>
       </section>
 
-      <form className="setting setting-col" onSubmit={saveKey}>
+      <section className="setting">
         <div className="setting-text">
-          <h3><Key size={16} aria-hidden="true" /> AI key</h3>
+          <h3><Key size={16} aria-hidden="true" /> AI model</h3>
           <p className="muted">
             {apiKeyConfigured
-              ? 'Connected. Lessons are written about your actual code.'
-              : 'Not connected, so you’ll see sample explanations. Add a Gemini key for lessons about your code.'}
+              ? 'Connected. Cue’s model writes lessons about your actual code.'
+              : 'Not connected, so you’ll see sample explanations. Add META_API_KEY to backend/.env and restart Cue.'}
           </p>
         </div>
-        <div className="inline-form">
-          <input
-            className="input"
-            type="password"
-            placeholder="Paste a key (optional)"
-            aria-label="Gemini API key"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-          />
-          <button className="btn btn-primary" type="submit">Save</button>
-        </div>
-        {status && <p className="status-line"><Check size={14} aria-hidden="true" /> {status}</p>}
-      </form>
+      </section>
 
       <details className="advanced">
         <summary>Advanced</summary>

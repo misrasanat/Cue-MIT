@@ -143,7 +143,7 @@ export default function Home({
           <Sparkles size={18} aria-hidden="true" />
           <div>
             <strong>You’re seeing sample explanations.</strong>
-            <span>Add an AI key to get lessons written specifically about your code. <button className="link-btn" onClick={onOpenSettings}>Open settings</button></span>
+            <span>Add META_API_KEY to backend/.env and restart Cue to get lessons written specifically about your code. <button className="link-btn" onClick={onOpenSettings}>Open settings</button></span>
           </div>
         </div>
       )}

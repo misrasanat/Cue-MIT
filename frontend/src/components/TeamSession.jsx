@@ -84,7 +84,7 @@ export default function TeamSession({ session, projectId, token, canGenerate, sh
       </div>
 
       {!canGenerate && (
-        <p className="team-session-hint"><KeyRound size={14} aria-hidden="true" /> Making lessons from a teammate&rsquo;s session uses your AI key. Add one in Settings.</p>
+        <p className="team-session-hint"><KeyRound size={14} aria-hidden="true" /> Making lessons from a teammate&rsquo;s session needs you to be signed in and the model connected (META_API_KEY in backend/.env).</p>
       )}
       {message && <p className="status-line team-session-message" role="status">{message}</p>}
 

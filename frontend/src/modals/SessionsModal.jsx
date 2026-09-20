@@ -87,7 +87,7 @@ export default function SessionsModal({ token, project, apiKeyConfigured, onClos
       <p className="muted">
         Pick a session and Cue will turn what changed into lessons.
         {token && project && <> They&rsquo;ll be shared with <strong>{project.name}</strong>, so your team can learn from them too.</>}
-        {!apiKeyConfigured && ' (No AI key yet, so you’ll get simple sample lessons.)'}
+        {!apiKeyConfigured && ' (The model isn’t connected yet, so you’ll get simple sample lessons.)'}
       </p>
 
       {sessions.length === 0 ? (

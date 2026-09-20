@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Lightbulb, Scale, Check, ArrowRight } from 'lucide-react';
+import { Lightbulb, Scale, Check, ArrowRight, ArrowLeft, X } from 'lucide-react';
 
 // ---- Pitch wording: tweak here before presenting -------------------------------------------
 const COPY = {
@@ -8,23 +8,28 @@ const COPY = {
     sub: 'You ship code you never actually understood.',
   },
   what: [
-    { key: 'why', Icon: Lightbulb, label: 'Why' },
-    { key: 'tradeoffs', Icon: Scale, label: 'Trade-offs' },
-    { key: 'understood', Icon: Check, label: 'Understood' },
+    { key: 'why', Icon: Lightbulb, label: 'Why', note: 'The reason behind every AI edit.' },
+    { key: 'tradeoffs', Icon: Scale, label: 'Trade-offs', note: 'What was chosen, and what was given up.' },
+    { key: 'understood', Icon: Check, label: 'Understood', note: 'Quick checks prove it stuck.' },
   ],
+  whatTitle: 'Cue turns AI-written code into understanding.',
   idea: {
     aloneLabel: 'alone',
     hubLabel: 'Cue',
     caption: 'A third brain for your team.',
+    note: 'Everyone learns from each other\u2019s AI sessions, not just their own.',
   },
   live: {
     title: 'Watch it live.',
+    sub: 'A real lesson, then a real Team Brain question.',
     button: 'Exit to Dashboard',
   },
   close: {
     tagline: 'Understanding each other, faster.',
   },
   nextLabel: 'Next',
+  backLabel: 'Back',
+  skipLabel: 'Skip to dashboard',
 };
 
 // Panel order. The close panel (index 4, see CLOSE_PANEL in App.jsx) is only reached through the navbar's Resume button.
@@ -106,6 +111,9 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
   return (
     <div className="pitch" data-panel={index} role="dialog" aria-modal="true" aria-label="Cue pitch">
       <div className="pitch-corner"><Logo /></div>
+      <button className="btn btn-ghost pitch-skip" onClick={onExit}>
+        {COPY.skipLabel} <X size={16} aria-hidden="true" />
+      </button>
 
       <section className={cls(0)} aria-hidden={index !== 0}>
         <h1 className="pitch-hook">{COPY.hook.title}</h1>
@@ -113,11 +121,13 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
       </section>
 
       <section className={cls(1)} aria-hidden={index !== 1}>
+        <h2 className="pitch-title">{COPY.whatTitle}</h2>
         <ul className="pitch-icons">
-          {COPY.what.map(({ key, Icon, label }) => (
+          {COPY.what.map(({ key, Icon, label, note }) => (
             <li key={key} className="pitch-icon-item">
               <span className="tile-icon pitch-icon"><Icon size={40} aria-hidden="true" /></span>
               <span className="pitch-icon-label">{label}</span>
+              <span className="pitch-icon-note">{note}</span>
             </li>
           ))}
         </ul>
@@ -126,10 +136,12 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
       <section className={cls(2)} aria-hidden={index !== 2}>
         <Diagram />
         <p className="pitch-caption gradient-text">{COPY.idea.caption}</p>
+        <p className="pitch-sub">{COPY.idea.note}</p>
       </section>
 
       <section className={cls(3)} aria-hidden={index !== 3}>
         <h1 className="pitch-hook">{COPY.live.title}</h1>
+        <p className="pitch-sub">{COPY.live.sub}</p>
         <button className="btn btn-primary btn-lg pitch-exit" onClick={onExit} tabIndex={index === 3 ? 0 : -1}>
           {COPY.live.button} <ArrowRight size={18} aria-hidden="true" />
         </button>
@@ -144,6 +156,11 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
         <div className="pitch-dots" aria-label={`Panel ${index + 1} of ${TOTAL}`}>
           {Array.from({ length: TOTAL }, (_, i) => <i key={i} className={i === index ? 'on' : ''} />)}
         </div>
+        {index > 0 && index <= LAST_LINEAR && (
+          <button className="btn btn-ghost pitch-back" onClick={() => setIndex((i) => Math.max(0, i - 1))}>
+            <ArrowLeft size={16} aria-hidden="true" /> {COPY.backLabel}
+          </button>
+        )}
         {index < LAST_LINEAR && (
           <button className="btn btn-soft pitch-next" onClick={next}>
             {COPY.nextLabel} <ArrowRight size={16} aria-hidden="true" />
