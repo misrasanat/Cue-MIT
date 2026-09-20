@@ -902,3 +902,21 @@ html { scroll-behavior: smooth; }
 .pitch-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); transition: background 0.3s, transform 0.3s; }
 .pitch-dots i.on { background: var(--brand); transform: scale(1.4); }
 .pitch-next { position: absolute; right: 36px; }
+.pitch-skip { position: absolute; top: 20px; right: 28px; z-index: 2; min-height: 36px; padding: 6px 12px; font-size: 13px; }
+.pitch[data-panel="4"] .pitch-skip { opacity: 0; pointer-events: none; }
+.pitch-title { font-size: clamp(28px, 3.4vw, 44px); max-width: 24ch; }
+.pitch-icon-note { font-size: 16px; color: var(--ink-2); max-width: 20ch; }
+.pitch-back { position: absolute; left: 36px; }
+.pitch-panel .pitch-sub { max-width: 44ch; }
+.pitch-panel .pitch-hook + .pitch-sub { margin-top: -8px; }
+
+/* Top bar: tighter type and buttons so the extra Demo/Resume buttons never crowd the nav. */
+.topbar-inner { max-width: 1320px; gap: 12px; }
+.topbar-end { gap: 8px; flex-shrink: 0; }
+.topbar-end .btn { min-height: 36px; padding: 6px 12px; font-size: 13px; gap: 6px; }
+.topbar-end .user-btn { min-height: 38px; font-size: 13px; }
+.topbar-end .user-avatar { width: 28px; height: 28px; font-size: 13px; }
+.nav-item { padding: 7px 12px; font-size: 14px; gap: 6px; }
+.brand-name { font-size: 22px; }
+.brand-zone { flex: 1 1 0; }
+.project-pill-btn { font-size: 13px; max-width: 200px; }

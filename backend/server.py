@@ -148,6 +148,7 @@ EDIT_TOOLS = {
 COMMAND_TOOLS = {"run_command"}
 telemetry_logs = []  # rolling buffer of last 50 raw hook events for the debug stream
 
+CARD_MAX_TOKENS = 1500
 CARD_SYSTEM_INSTRUCTION = """You are a warm, encouraging senior engineering mentor explaining AI code changes to an engineering intern.
 Your goal is to bridge "comprehension lag" and teach them the architectural intuition behind the code diff and stated intent.
 
@@ -235,6 +236,11 @@ share = ShareSync(supabase_client)
 # Team Brain's question answering (see team_qa.py). The model client reads META_API_KEY from backend/.env,
 # and every model call passes through the spending limit in budget.py.
 llm_client = MetaClient()
+
+
+def ai_available():
+    """Lessons are written by the team's Meta model (META_API_KEY in the environment); a pasted Gemini key is only a fallback."""
+    return llm_client.configured or client is not None
 budget_guard = BudgetGuard.from_env(shared=SharedLedger(supabase_client))
 team_qa = TeamQA(llm_client, budget_guard)
 
@@ -376,9 +382,41 @@ def _fallback_card(file_path, intent_text, timestamp):
     }
 
 
+def _parse_card_json(text):
+    """Models sometimes wrap JSON in prose or code fences; pull out the object."""
+    match = re.search(r"\{.*\}", text or "", re.S)
+    return json.loads(match.group(0))
+
+
+def _card_via_meta(prompt):
+    messages = [
+        {"role": "system", "content": CARD_SYSTEM_INSTRUCTION + "\nReply with the JSON object only."},
+        {"role": "user", "content": prompt},
+    ]
+    budget_guard.authorize(llm_client.estimate_cost(messages, CARD_MAX_TOKENS))
+    result = llm_client.chat(messages, max_tokens=CARD_MAX_TOKENS, reasoning_effort="minimal")
+    budget_guard.record("card", result)
+    return _parse_card_json(result.text), "real-meta-ai"
+
+
+def _card_via_gemini(prompt):
+    from google.genai import types
+    model_name = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+    response = client.models.generate_content(
+        model=model_name,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=CARD_SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            max_output_tokens=1200,
+        ),
+    )
+    return json.loads(response.text), "real-gemini-ai"
+
+
 def build_card(file_path, intent_text, diff, timestamp):
     """One model call for one file. Returns a card dict, or None if the model judged it trivial."""
-    if not client:
+    if not ai_available():
         return _fallback_card(file_path, intent_text, timestamp)
 
     prompt = f"""
@@ -388,25 +426,13 @@ Diff / Changes:
 {diff}
 """
     try:
-        from google.genai import types
-        model_name = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=CARD_SYSTEM_INSTRUCTION,
-                response_mime_type="application/json",
-                max_output_tokens=1200,
-            ),
-        )
-        card = json.loads(response.text)
+        card, generator = _card_via_meta(prompt) if llm_client.configured else _card_via_gemini(prompt)
         if card.get("skip"):
             return None
-        card.update(id=str(uuid.uuid4()), file=file_path, timestamp=timestamp,
-                    generator="real-gemini-ai")
+        card.update(id=str(uuid.uuid4()), file=file_path, timestamp=timestamp, generator=generator)
         return card
     except Exception as e:
-        print(f"[Generate] Gemini failed for {file_path} ({e}); using fallback card.")
+        print(f"[Generate] model failed for {file_path} ({e}); using fallback card.")
         return _fallback_card(file_path, intent_text, timestamp)
 
 
@@ -414,7 +440,7 @@ Diff / Changes:
 def health():
     return jsonify({
         "status": "ok",
-        "api_key_configured": bool(api_key),
+        "api_key_configured": bool(api_key) or llm_client.configured,
         "public": PUBLIC,
         **({} if PUBLIC else {"hook_installed": hook_success, "hook_info": hook_info, "card_count": len(cards)}),
     })
@@ -434,14 +460,14 @@ def config():
         else:
             api_key = ""
             client = None
-            return jsonify({"status": "cleared", "api_key_configured": False, "hook_installed": hook_success})
+            return jsonify({"status": "cleared", "api_key_configured": ai_available(), "hook_installed": hook_success})
 
     # GET method
     if PUBLIC:
-        return jsonify({"api_key_configured": bool(api_key), "hook_installed": False})
+        return jsonify({"api_key_configured": bool(api_key) or llm_client.configured, "hook_installed": False})
     masked = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else ("Configured" if api_key else "Not Set")
     return jsonify({
-        "api_key_configured": bool(api_key),
+        "api_key_configured": bool(api_key) or llm_client.configured,
         "hook_installed": hook_success,
         "hook_info": hook_info,
         "masked_key": masked
@@ -537,7 +563,7 @@ def _make_cards(by_file, already, mocked, project_id, owner_id, allow_mock=True,
         intent_text = "; ".join(intents) or "Direct file edit"
         digest = hashlib.sha1(f"{file_path}\n{diff}\n{intent_text}".encode("utf-8")).hexdigest()
 
-        if digest in already or (not client and digest in mocked):
+        if digest in already or (not ai_available() and digest in mocked):
             done_before += 1
             continue
         if _is_trivial(file_path, diff):
@@ -687,9 +713,9 @@ def api_generate_shared_session(project_id, owner_id, session_id):
         return jsonify({"error": "Sign in to make lessons from your team's sessions."}), 401
     if viewer_id not in get_project_member_emails(project_id):
         return jsonify({"error": "Only members of this project can do that."}), 403
-    if not client:
+    if not ai_available():
         return jsonify({"error": "needs_ai_key",
-                        "message": "Making lessons from a teammate's session needs an AI key. Add one in Settings."}), 400
+                        "message": "Lessons need the team's model key. Add META_API_KEY to backend/.env and restart Cue."}), 400
 
     events, err = get_session_events(project_id, owner_id, session_id)
     if err:

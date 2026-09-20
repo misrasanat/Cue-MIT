@@ -480,7 +480,6 @@ export default function App() {
         <SettingsModal
           session={session}
           apiKeyConfigured={apiKeyConfigured}
-          onKeyChanged={setApiKeyConfigured}
           onOpen={setModal}
           onStartOver={startOver}
           onClose={() => setModal(null)}
