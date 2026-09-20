@@ -6,6 +6,11 @@ import datetime
 import jwt
 from supabase import create_client, Client
 
+try:
+    import public_mode
+except ImportError:  # imported as backend.supabase_client
+    from . import public_mode
+
 DEFAULT_SUPABASE_URL = "https://dutkvelgcwmczaxbdyjm.supabase.co"
 DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1dGt2ZWxnY3dtY3pheGJkeWptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk1NzUwNDcsImV4cCI6MjEwNTE1MTA0N30.ZxJcYcBIwzDFn--IaPbBJI6IEqKPXc42AOwm3C6Ftac"
 
@@ -31,6 +36,36 @@ def register_user_email(user_id, email):
     if user_id and email:
         USER_EMAIL_MAP[str(user_id)] = str(email).strip().lower()
 
+_jwks = None
+
+
+def _must_verify_tokens():
+    """A public server must check logins; your own computer trusts them (a saved login may be older than an hour)."""
+    return public_mode.is_public() or bool(os.environ.get("SUPABASE_JWT_SECRET", "").strip())
+
+
+def _jwks_client():
+    """Supabase publishes the public keys that verify logins, so no secret is needed for the newer signing keys."""
+    global _jwks
+    if _jwks is None:
+        _jwks = jwt.PyJWKClient(f"{url}/auth/v1/.well-known/jwks.json", cache_keys=True, lifespan=3600)
+    return _jwks
+
+
+def _decode_verified(token):
+    """Checks that Supabase really signed the token, that it is meant for logged-in users, and that it has not expired."""
+    alg = jwt.get_unverified_header(token).get("alg")
+    if alg == "HS256":  # older projects sign with a shared secret
+        secret = os.environ.get("SUPABASE_JWT_SECRET", "").strip()
+        if not secret:
+            raise jwt.InvalidTokenError("this token needs SUPABASE_JWT_SECRET to be verified")
+        return jwt.decode(token, secret, algorithms=["HS256"], audience="authenticated", leeway=10)
+    if alg in ("ES256", "RS256"):  # newer projects sign with a private key and publish the public one
+        key = _jwks_client().get_signing_key_from_jwt(token).key
+        return jwt.decode(token, key, algorithms=[alg], audience="authenticated", leeway=10)
+    raise jwt.InvalidAlgorithmError(f"unsupported token algorithm: {alg}")  # includes 'none'
+
+
 def get_user_info_from_token(auth_header):
     """
     Extracts user_id and email from Authorization header (Bearer <token>).
@@ -43,7 +78,11 @@ def get_user_info_from_token(auth_header):
         return None, None
 
     try:
-        decoded = jwt.decode(token, options={"verify_signature": False})
+        if _must_verify_tokens():
+            decoded = _decode_verified(token)
+        else:
+            # Your own computer trusts the saved login, which can be older than the token's lifetime.
+            decoded = jwt.decode(token, options={"verify_signature": False})
         user_id = decoded.get("sub") or decoded.get("user_id")
         email = decoded.get("email") or decoded.get("user_metadata", {}).get("email", "")
         if user_id and email:

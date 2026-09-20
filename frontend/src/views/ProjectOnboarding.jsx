@@ -157,7 +157,7 @@ export default function ProjectOnboarding({ user, token, onProjectCreated }) {
                 type="text"
                 required
                 className="input-field"
-                placeholder="http://localhost:5173/join?token=... or token"
+                placeholder="Paste your invite link or code"
                 value={inviteTokenOrUrl}
                 onChange={(e) => setInviteTokenOrUrl(e.target.value)}
               />

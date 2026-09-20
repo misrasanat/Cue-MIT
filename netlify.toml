@@ -1,0 +1,14 @@
+# Netlify build settings for the Cue web app (the Vite project in frontend/).
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# The app handles its own pages, so every path (for example /join?token=...) must serve index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
