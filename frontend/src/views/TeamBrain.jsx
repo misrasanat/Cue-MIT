@@ -76,7 +76,8 @@ export default function TeamBrain({
   const teamSessions = sessions.filter((s) => s.user_id !== meId);
   const liveNow = teamSessions.slice(0, 4);
   const personSessions = activePerson ? teamSessions.filter((s) => s.user_id === activePerson.key) : [];
-  const sessionProps = { projectId, token, canGenerate: Boolean(token) && apiKeyConfigured, onGenerated };
+  // Lessons for a teammate's session are written by the hosted backend, so ask it (not this computer) whether the model is connected.
+  const sessionProps = { projectId, token, canGenerate: Boolean(token) && Boolean(llm?.configured), onGenerated };
 
   const recentFiles = [...new Set([...teamSessions.flatMap((s) => s.files), ...teamLessons.map((l) => l.file)]
     .filter(Boolean).map(baseName))].slice(0, 2);
