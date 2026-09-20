@@ -923,3 +923,16 @@ html { scroll-behavior: smooth; }
 .project-pill-btn { font-size: 13px; max-width: 200px; }
 .pitch-reveal { display: flex; flex-direction: column; align-items: center; gap: 28px; opacity: 0; transform: translateY(12px); transition: opacity 0.5s var(--ease), transform 0.5s var(--ease); }
 .pitch-reveal.is-shown { opacity: 1; transform: none; }
+
+.pitch-vision { display: flex; align-items: center; gap: clamp(24px, 4vw, 56px); }
+.pitch-era { display: flex; flex-direction: column; gap: 16px; text-align: left; }
+.pitch-era ul { display: flex; flex-direction: column; gap: 12px; }
+.pitch-era-label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--ink-2); }
+.pitch-era-tomorrow .pitch-era-label { color: var(--brand-strong); }
+.pitch-chip { display: flex; align-items: center; gap: 10px; padding: 14px 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); font-weight: 600; font-size: 18px; }
+.pitch-chip svg { color: var(--ink-2); }
+.pitch-era-arrow { color: var(--brand); flex-shrink: 0; }
+.pitch-scope { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border: 1px solid var(--invert-line); border-radius: var(--radius); background: var(--invert-bg); box-shadow: var(--shadow-md); }
+.pitch-scope-icon { width: 44px; height: 44px; padding: 11px; margin: 0; flex-shrink: 0; }
+.pitch-scope-text { display: flex; flex-direction: column; font-size: 15px; color: var(--ink-2); }
+.pitch-scope-text strong { font-size: 19px; color: var(--ink); }

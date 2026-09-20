@@ -57,7 +57,7 @@ export default function App() {
   const [pitchStarted, setPitchStarted] = useState(false);
   const [pitchIndex, setPitchIndex] = useState(0);
   const startPitch = () => { setPitchIndex(0); setPitchStarted(true); setPitchOpen(true); };
-  const resumePitch = () => { setPitchIndex(5); setPitchOpen(true); }; // shows the final slide
+  const resumePitch = () => setPitchOpen(true); // picks up on the slide you left
   const exitPitch = useCallback(() => setPitchOpen(false), []);
 
   const progress = useProgress();

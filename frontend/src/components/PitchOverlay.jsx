@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Lightbulb, Scale, Check, ArrowRight, ArrowLeft, X } from 'lucide-react';
+import { Lightbulb, Scale, Check, ArrowRight, ArrowLeft, X, Terminal, Sparkles, UserPlus, Eye, Brain } from 'lucide-react';
 
 // ---- Pitch wording: tweak here before presenting -------------------------------------------
 const COPY = {
@@ -27,6 +27,20 @@ const COPY = {
   intro: {
     badge: 'INTRODUCING',
     tagline: 'Understanding each other better.',
+  },
+  vision: {
+    title: 'Where this goes.',
+    todayLabel: 'Today',
+    today: [
+      { key: 'gemini', Icon: Sparkles, label: 'Gemini' },
+      { key: 'agy', Icon: Terminal, label: 'Antigravity' },
+    ],
+    tomorrowLabel: 'Tomorrow',
+    tomorrow: [
+      { key: 'hire', Icon: UserPlus, label: 'Every new hire\u2019s first week', note: 'Ramp up on why the code is the way it is.' },
+      { key: 'manager', Icon: Eye, label: 'Every manager', note: 'Finally sees where their team is really stuck.' },
+      { key: 'knowledge', Icon: Brain, label: 'Every bit of knowledge', note: 'It used to walk out the door. Now it stays exactly where it belongs.' },
+    ],
   },
   close: {
     tagline: 'Understanding each other better.',
