@@ -50,9 +50,9 @@ const COPY = {
   skipLabel: 'Skip to dashboard',
 };
 
-// Panels run in order; the last one (index 5) is the closing slide.
-const LAST_LINEAR = 5;
-const TOTAL = 6;
+// Panels run in order; the last one (index 6) is the closing slide.
+const LAST_LINEAR = 6;
+const TOTAL = 7;
 const IDEA_PANEL = 3; // the slide whose caption appears on the first Next
 // ---------------------------------------------------------------------------------------------
 
@@ -188,6 +188,32 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
       </section>
 
       <section className={cls(5)} aria-hidden={index !== 5}>
+        <h2 className="pitch-title">{COPY.vision.title}</h2>
+        <div className="pitch-vision">
+          <div className="pitch-era pitch-era-today">
+            <span className="pitch-era-label">{COPY.vision.todayLabel}</span>
+            <ul>
+              {COPY.vision.today.map(({ key, Icon, label }) => (
+                <li key={key} className="pitch-chip"><Icon size={20} aria-hidden="true" /> {label}</li>
+              ))}
+            </ul>
+          </div>
+          <ArrowRight className="pitch-era-arrow" size={40} aria-hidden="true" />
+          <div className="pitch-era pitch-era-tomorrow">
+            <span className="pitch-era-label">{COPY.vision.tomorrowLabel}</span>
+            <ul>
+              {COPY.vision.tomorrow.map(({ key, Icon, label, note }) => (
+                <li key={key} className="pitch-scope">
+                  <span className="tile-icon pitch-scope-icon"><Icon size={22} aria-hidden="true" /></span>
+                  <span className="pitch-scope-text"><strong>{label}</strong><span>{note}</span></span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className={cls(6)} aria-hidden={index !== 6}>
         <Logo large />
         <p className="pitch-sub" style={{ fontSize: 'clamp(24px, 3vw, 36px)', color: 'var(--ink)', fontWeight: 500 }}>
           "{COPY.close.tagline}"

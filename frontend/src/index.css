@@ -861,7 +861,7 @@ html { scroll-behavior: smooth; }
 .pitch-corner .brand-mark { width: 28px; height: 28px; font-size: 16px; border-radius: 8px; }
 .pitch-corner .brand-name { font-size: 20px; }
 .pitch[data-panel="1"] .pitch-corner,
-.pitch[data-panel="5"] .pitch-corner { opacity: 0; }
+.pitch[data-panel="6"] .pitch-corner { opacity: 0; }
 
 .pitch-panel {
   position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -904,7 +904,7 @@ html { scroll-behavior: smooth; }
 .pitch-dots i.on { background: var(--brand); transform: scale(1.4); }
 .pitch-next { position: absolute; right: 36px; }
 .pitch-skip { position: absolute; top: 20px; right: 28px; z-index: 2; min-height: 36px; padding: 6px 12px; font-size: 13px; }
-.pitch[data-panel="5"] .pitch-skip { opacity: 0; pointer-events: none; }
+.pitch[data-panel="6"] .pitch-skip { opacity: 0; pointer-events: none; }
 .pitch-title { font-size: clamp(28px, 3.4vw, 44px); max-width: 24ch; }
 .pitch-icon-note { font-size: 16px; color: var(--ink-2); max-width: 20ch; }
 .pitch-back { position: absolute; left: 36px; }
