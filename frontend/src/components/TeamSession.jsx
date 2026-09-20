@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Loader2, Sparkles, KeyRound } from 'lucide-react';
 import { API_BASE } from '../utils/api';
-import { baseName, isLive, sourceName, timeAgo } from '../utils/cards';
+import { baseName, tidyPaths, isLive, sourceName, timeAgo } from '../utils/cards';
 
 // One coding session from a teammate, as it was shared from their machine.
 export default function TeamSession({ session, projectId, token, canGenerate, showAuthor = true, onGenerated }) {
@@ -63,7 +63,7 @@ export default function TeamSession({ session, projectId, token, canGenerate, sh
         </span>
       </div>
 
-      <p className="team-session-summary">{summary}</p>
+      <p className="team-session-summary">{tidyPaths(summary)}</p>
 
       {files.length > 0 && (
         <div className="team-session-files">
@@ -98,7 +98,7 @@ export default function TeamSession({ session, projectId, token, canGenerate, sh
           {session.events.map((e, i) => (
             <li key={i}>
               <span className="muted small">{timeAgo(e.at)}</span>
-              <span>{e.kind === 'edit' ? `Edited ${baseName(e.file)}${e.summary ? ` – ${e.summary}` : ''}` : 'Ran a command'}</span>
+              <span>{e.kind === 'edit' ? `Edited ${baseName(e.file)}${e.summary ? ` – ${tidyPaths(e.summary)}` : ''}` : 'Ran a command'}</span>
             </li>
           ))}
         </ul>

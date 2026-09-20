@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Layers, Sparkles, Loader2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import Modal from '../components/Modal';
 import { API_BASE, LOCAL_API_BASE } from '../utils/api';
-import { baseName } from '../utils/cards';
+import { baseName, tidyPaths } from '../utils/cards';
 
 function whenLabel(iso) {
   const d = new Date(iso);
@@ -138,7 +138,7 @@ export default function SessionsModal({ token, project, apiKeyConfigured, onClos
                     {s.events.map((e, i) => (
                       <li key={i}>
                         <span className="muted small">{e.ts}</span>
-                        <span>{e.kind === 'edit' ? `Edited ${baseName(e.file)}${e.summary ? ` – ${e.summary}` : ''}` : `Ran a command: ${e.summary}`}</span>
+                        <span>{e.kind === 'edit' ? `Edited ${baseName(e.file)}${e.summary ? ` – ${tidyPaths(e.summary)}` : ''}` : `Ran a command: ${tidyPaths(e.summary)}`}</span>
                       </li>
                     ))}
                   </ul>

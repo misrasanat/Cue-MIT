@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Lightbulb, Scale, Check, ArrowRight, ArrowLeft, X } from 'lucide-react';
 
 // ---- Pitch wording: tweak here before presenting -------------------------------------------
@@ -32,9 +32,10 @@ const COPY = {
   skipLabel: 'Skip to dashboard',
 };
 
-// Panel order. The close panel (index 4, see CLOSE_PANEL in App.jsx) is only reached through the navbar's Resume button.
-const LAST_LINEAR = 3;
+// Panels run in order; the last one (index 4) is the closing slide.
+const LAST_LINEAR = 4;
 const TOTAL = 5;
+const IDEA_PANEL = 2; // the slide whose caption appears on the first Next
 // ---------------------------------------------------------------------------------------------
 
 function Logo({ large }) {
@@ -89,24 +90,35 @@ function Diagram() {
 }
 
 export default function PitchOverlay({ index, setIndex, onExit }) {
+  // On the "bigger idea" slide, the first Next reveals the caption; the second moves on.
+  const [revealed, setRevealed] = useState(false);
+
+  const next = () => {
+    if (index === IDEA_PANEL && !revealed) setRevealed(true);
+    else setIndex((i) => (i < LAST_LINEAR ? i + 1 : i));
+  };
+  const back = () => {
+    if (index === IDEA_PANEL && revealed) setRevealed(false);
+    else setIndex((i) => Math.max(0, i - 1));
+  };
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'ArrowRight') {
         e.preventDefault();
-        setIndex((i) => (i < LAST_LINEAR ? i + 1 : i));
+        next();
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        setIndex((i) => Math.max(0, i - 1));
+        back();
       } else if (e.key === 'Escape') {
         onExit();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setIndex, onExit]);
+  });
 
   const cls = (i) => `pitch-panel ${i === index ? 'is-active' : i < index ? 'is-past' : 'is-future'}`;
-  const next = () => setIndex((i) => (i < LAST_LINEAR ? i + 1 : i));
 
   return (
     <div className="pitch" data-panel={index} role="dialog" aria-modal="true" aria-label="Cue pitch">
@@ -135,8 +147,10 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
 
       <section className={cls(2)} aria-hidden={index !== 2}>
         <Diagram />
-        <p className="pitch-caption gradient-text">{COPY.idea.caption}</p>
-        <p className="pitch-sub">{COPY.idea.note}</p>
+        <div className={`pitch-reveal ${revealed ? 'is-shown' : ''}`} aria-hidden={!revealed}>
+          <p className="pitch-caption gradient-text">{COPY.idea.caption}</p>
+          <p className="pitch-sub">{COPY.idea.note}</p>
+        </div>
       </section>
 
       <section className={cls(3)} aria-hidden={index !== 3}>
@@ -156,8 +170,8 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
         <div className="pitch-dots" aria-label={`Panel ${index + 1} of ${TOTAL}`}>
           {Array.from({ length: TOTAL }, (_, i) => <i key={i} className={i === index ? 'on' : ''} />)}
         </div>
-        {index > 0 && index <= LAST_LINEAR && (
-          <button className="btn btn-ghost pitch-back" onClick={() => setIndex((i) => Math.max(0, i - 1))}>
+        {index > 0 && (
+          <button className="btn btn-ghost pitch-back" onClick={back}>
             <ArrowLeft size={16} aria-hidden="true" /> {COPY.backLabel}
           </button>
         )}

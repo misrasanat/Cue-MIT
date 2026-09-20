@@ -920,3 +920,5 @@ html { scroll-behavior: smooth; }
 .brand-name { font-size: 22px; }
 .brand-zone { flex: 1 1 0; }
 .project-pill-btn { font-size: 13px; max-width: 200px; }
+.pitch-reveal { display: flex; flex-direction: column; align-items: center; gap: 28px; opacity: 0; transform: translateY(12px); transition: opacity 0.5s var(--ease), transform 0.5s var(--ease); }
+.pitch-reveal.is-shown { opacity: 1; transform: none; }

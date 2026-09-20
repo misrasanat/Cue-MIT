@@ -20,14 +20,20 @@ export function baseName(path) {
   return String(path).split(/[\\/]/).pop();
 }
 
+// Turns any path inside a sentence ("Updated src/users/dm/extra.py") into just its file name ("Updated extra.py").
+export function tidyPaths(text) {
+  if (!text) return text;
+  return String(text).replace(/(?<![\w:./-])(?:~?\/)?(?:[\w.-]+\/)+([\w.-]+\.[A-Za-z0-9]+)/g, '$1');
+}
+
 export function normalize(card, source) {
   const hasQuiz = card.quiz && Array.isArray(card.quiz.options) && card.quiz.options.length > 1;
   return {
     id: String(card.id),
     // Teammate cards carry a plain-English title; otherwise fall back to the decision sentence.
-    title: card.plain_title || card.decision || 'A change worth understanding',
-    decision: card.decision || '',
-    why: card.why || '',
+    title: tidyPaths(card.plain_title || card.decision || 'A change worth understanding'),
+    decision: tidyPaths(card.decision || ''),
+    why: tidyPaths(card.why || ''),
     tip: card.mentor_tip || '',
     analogy: card.analogy || '',
     alternatives: Array.isArray(card.alternatives) ? card.alternatives : [],

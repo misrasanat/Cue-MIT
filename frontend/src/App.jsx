@@ -18,8 +18,6 @@ import DebugLogsModal from './modals/DebugLogsModal';
 import ProjectModal from './modals/ProjectModal';
 import PitchOverlay from './components/PitchOverlay';
 
-const CLOSE_PANEL = 4; // the pitch's final panel, shown by Resume Presentation
-
 const NAV = [
   { id: 'home', label: 'Home', Icon: HomeIcon },
   { id: 'learn', label: 'Learn', Icon: GraduationCap },
@@ -59,7 +57,7 @@ export default function App() {
   const [pitchStarted, setPitchStarted] = useState(false);
   const [pitchIndex, setPitchIndex] = useState(0);
   const startPitch = () => { setPitchIndex(0); setPitchStarted(true); setPitchOpen(true); };
-  const resumePitch = () => { setPitchIndex(CLOSE_PANEL); setPitchOpen(true); };
+  const resumePitch = () => setPitchOpen(true); // picks up on the slide you left
   const exitPitch = useCallback(() => setPitchOpen(false), []);
 
   const progress = useProgress();
