@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Activity, RefreshCw, ChevronRight, ChevronDown } from 'lucide-react';
 import Modal from '../components/Modal';
-import { API_BASE } from '../utils/api';
+import { LOCAL_API_BASE } from '../utils/api';
 
 export default function DebugLogsModal({ onClose }) {
   const [logs, setLogs] = useState([]);
@@ -9,7 +9,7 @@ export default function DebugLogsModal({ onClose }) {
 
   const fetchLogs = async () => {
     try {
-      const res = await fetch(`${API_BASE}/logs`);
+      const res = await fetch(`${LOCAL_API_BASE}/logs`);
       if (res.ok) setLogs(await res.json());
     } catch {
       // Backend offline; the list just stays as it was.

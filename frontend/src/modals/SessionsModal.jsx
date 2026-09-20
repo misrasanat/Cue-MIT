@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Layers, Sparkles, Loader2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import Modal from '../components/Modal';
-import { API_BASE } from '../utils/api';
+import { API_BASE, LOCAL_API_BASE } from '../utils/api';
 import { baseName } from '../utils/cards';
 
 function whenLabel(iso) {
@@ -26,7 +26,7 @@ export default function SessionsModal({ token, project, apiKeyConfigured, onClos
 
   const fetchSessions = async () => {
     try {
-      const res = await fetch(`${API_BASE}/sessions`);
+      const res = await fetch(`${LOCAL_API_BASE}/sessions`);
       if (res.ok) setSessions(await res.json());
     } catch {
       // Backend offline; the empty state explains what to do.
@@ -49,7 +49,7 @@ export default function SessionsModal({ token, project, apiKeyConfigured, onClos
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(project?.id ? { 'X-Project-Id': project.id } : {}),
       };
-      const res = await fetch(`${API_BASE}/sessions/${sessionId}/generate`, { method: 'POST', headers });
+      const res = await fetch(`${LOCAL_API_BASE}/sessions/${sessionId}/generate`, { method: 'POST', headers });
       const data = await res.json();
       let msg;
       if (!res.ok) {
