@@ -52,10 +52,15 @@ from supabase_client import (
     get_session_events,
     get_session_carded,
     add_session_carded,
+    newest_session_events,
+    session_events_after,
 )
 import supabase_client
 from project_link import find_link
 from share_sync import ShareSync, prepare_event
+from llm import MetaClient
+from budget import BudgetGuard, SharedLedger
+from team_qa import TeamQA
 from seed_data import SAM_CUE_CARDS
 
 # Load environment variables from .env if present
@@ -174,6 +179,12 @@ sessions = _load_sessions()
 
 # Pushes activity from linked repos to the team database in the background (see share_sync.py).
 share = ShareSync(supabase_client)
+
+# Team Brain's question answering (see team_qa.py). The model client reads META_API_KEY from backend/.env,
+# and every model call passes through the spending limit in budget.py.
+llm_client = MetaClient()
+budget_guard = BudgetGuard.from_env(shared=SharedLedger(supabase_client))
+team_qa = TeamQA(llm_client, budget_guard)
 
 
 def _extract_diff(tool_input, tool_response):
@@ -968,96 +979,60 @@ def get_team_cards():
     project_id = request.args.get("project_id")
     return jsonify(get_all_collective_cards(project_id=project_id))
 
+class TeamSource:
+    """Where team search reads a project's notes from: lessons, shared sessions, shared edits, and who is who."""
+
+    def __init__(self, project_id):
+        self.project_id = project_id
+
+    def cards(self):
+        return get_all_collective_cards(project_id=self.project_id)
+
+    def sessions(self):
+        rows, _err = list_project_sessions(self.project_id, limit=200) if self.project_id else ([], None)
+        return rows
+
+    def names(self):
+        emails = get_project_member_emails(self.project_id) if self.project_id else {}
+        return {uid: friendly_name(email) for uid, email in emails.items()}
+
+    def newest_events(self):
+        rows, _err = newest_session_events(self.project_id) if self.project_id else ([], None)
+        return rows
+
+    def events_since(self, after_id):
+        rows, _err = session_events_after(self.project_id, after_id) if self.project_id else ([], None)
+        return rows
+
+
 @app.route("/ask-team", methods=["POST"])
 def ask_team():
     """
-    Collective Knowledge Pool query endpoint.
-    Retrieves matching cards across team members and synthesizes a grounded answer.
+    Answer a question about the team's work. The search runs locally and only what it finds reaches the
+    model, so answers are grounded, cheap, and cached. See team_qa.py for how cost is controlled.
     """
     data = request.get_json(silent=True) or {}
-    question = data.get("question", "").strip()
+    question = (data.get("question") or "").strip()
     project_id = data.get("project_id") or request.args.get("project_id")
-
     if not question:
         return jsonify({"error": "Missing question in request body"}), 400
 
-    all_cards = get_all_collective_cards(project_id=project_id)
-    matched_cards = retrieve_relevant_cards(question, all_cards, max_results=2)
+    asker_id = get_user_id_from_token(request.headers.get("Authorization")) or ""
+    return jsonify(team_qa.answer(question, TeamSource(project_id), project_id or "demo", asker_id))
 
-    if not matched_cards:
-        if project_id:
-            not_found = ("I couldn't find anything about that in your team's notes yet. "
-                         "Try naming a file or feature a teammate worked on, or check back once more of the team has made lessons from their sessions.")
-        else:
-            not_found = ("I couldn't find any architectural decisions or Cue Cards in the team pool matching your question. "
-                         "Try asking about payment retry logic, backoff jitter, error classification, idempotency keys, or circuit breakers.")
-        return jsonify({
-            "answer": not_found,
-            "sources": [],
-            "query": question
-        })
 
-    # Grounded synthesis with Gemini if client is active
-    if client:
-        cards_context = []
-        for c in matched_cards:
-            cards_context.append({
-                "author": c.get("author", "Team Member"),
-                "file": c.get("file"),
-                "timestamp": c.get("timestamp"),
-                "decision": c.get("decision"),
-                "why": c.get("why"),
-                "mentor_tip": c.get("mentor_tip"),
-                "alternatives": c.get("alternatives", [])
-            })
-
-        prompt = f"""Question from team member:
-"{question}"
-
-Grounded Historical Team Cards:
-{json.dumps(cards_context, indent=2)}
-
-Please provide a grounded, concise answer channeling the original author's stated reasoning:"""
-
-        try:
-            from google.genai import types
-            model_name = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=ASK_TEAM_SYSTEM_INSTRUCTION
-                )
-            )
-            answer_text = response.text.strip()
-            return jsonify({
-                "answer": answer_text,
-                "sources": matched_cards,
-                "query": question,
-                "grounded": True
-            })
-        except Exception as e:
-            print(f"[Ask-Team Warning] Gemini API call failed: {e}. Falling back to structured synthesis.")
-
-    # Graceful fallback synthesis (offline or when API key is missing)
-    primary = matched_cards[0]
-    author = primary.get("author", "Sam")
-    why = primary.get("why", "")
-    tip = primary.get("mentor_tip", "")
-    analogy = primary.get("analogy", "")
-
-    fallback_answer = f"{author}'s Rationale: {why}"
-    if analogy:
-        fallback_answer += f"\n\n🧩 In Simple Terms: {analogy}"
-    if tip:
-        fallback_answer += f"\n\n💡 Rule of Thumb: {tip}"
-
+@app.route("/llm/status", methods=["GET"])
+def llm_status():
+    """The AI spending limit and how question answering is going, for Team Brain."""
     return jsonify({
-        "answer": fallback_answer,
-        "sources": matched_cards,
-        "query": question,
-        "grounded": True
+        **budget_guard.status(),
+        "configured": llm_client.configured,
+        "reason": llm_client.not_configured_reason,
+        "model": llm_client.model,
+        "tier": llm_client.tier,
+        "stats": team_qa.stats,
     })
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))

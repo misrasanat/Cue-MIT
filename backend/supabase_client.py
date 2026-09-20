@@ -544,3 +544,69 @@ def add_session_carded(project_id, user_id, session_id, digests):
     except Exception as e:
         print(f"[Supabase DB Note] add_session_carded failed: {e}")
         return False
+
+
+# ==============================================================================
+# Team search + AI spend ledger (see schema_llm.sql)
+# ==============================================================================
+
+def newest_session_events(project_id, limit=1500):
+    """The most recent shared events for a project, with diffs, oldest first. Used to build the search index."""
+    if not supabase or not project_id:
+        return [], "Supabase is not connected"
+    try:
+        res = (supabase.table("session_events").select("*").eq("project_id", project_id)
+               .order("id", desc=True).limit(limit).execute())
+        return list(reversed(res.data or [])), None
+    except Exception as e:
+        return [], str(e)
+
+
+def session_events_after(project_id, after_id, limit=1500):
+    """Events newer than `after_id`, so the search index updates without re-downloading everything."""
+    if not supabase or not project_id:
+        return [], "Supabase is not connected"
+    try:
+        res = (supabase.table("session_events").select("*").eq("project_id", project_id)
+               .gt("id", after_id).order("id", desc=False).limit(limit).execute())
+        return res.data or [], None
+    except Exception as e:
+        return [], str(e)
+
+
+def insert_llm_usage(row):
+    if not supabase:
+        return False, "Supabase is not connected"
+    try:
+        supabase.table("llm_usage").insert(row).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def sum_llm_usage():
+    """Total AI spend recorded by every teammate. Returns (usd or None, error)."""
+    if not supabase:
+        return None, "Supabase is not connected"
+    try:
+        total, start, page = 0.0, 0, 1000  # the API returns at most 1000 rows per request
+        while True:
+            res = supabase.table("llm_usage").select("cost_usd").range(start, start + page - 1).execute()
+            rows = res.data or []
+            total += sum(float(r.get("cost_usd") or 0) for r in rows)
+            if len(rows) < page:
+                return round(total, 6), None
+            start += page
+    except Exception as e:
+        return None, str(e)
+
+
+def has_llm_alert():
+    """True when the team has already been told the AI budget was reached."""
+    if not supabase:
+        return False
+    try:
+        res = supabase.table("llm_usage").select("id").eq("purpose", "budget_alert").limit(1).execute()
+        return bool(res.data)
+    except Exception:
+        return False
