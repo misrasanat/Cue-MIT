@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Settings, User, Terminal, Layers, Activity, Key, Check, RotateCcw, Radio } from 'lucide-react';
 import Modal from '../components/Modal';
-import { API_BASE } from '../utils/api';
+import { LOCAL_API_BASE } from '../utils/api';
 import { timeAgo } from '../utils/cards';
 
 export default function SettingsModal({ session, apiKeyConfigured, onKeyChanged, onOpen, onStartOver, onClose }) {
@@ -13,7 +13,7 @@ export default function SettingsModal({ session, apiKeyConfigured, onKeyChanged,
   const [share, setShare] = useState(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/share/status`).then((r) => (r.ok ? r.json() : null)).then(setShare).catch(() => setShare(null));
+    fetch(`${LOCAL_API_BASE}/share/status`).then((r) => (r.ok ? r.json() : null)).then(setShare).catch(() => setShare(null));
   }, []);
 
   let shareText = 'Checking\u2026';
@@ -24,7 +24,7 @@ export default function SettingsModal({ session, apiKeyConfigured, onKeyChanged,
   const saveKey = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/config`, {
+      const res = await fetch(`${LOCAL_API_BASE}/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ api_key: apiKey }),
