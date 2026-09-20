@@ -121,6 +121,23 @@ npm run dev
 
 ---
 
+## Sharing sessions with your team
+
+Cue can show a teammate's coding sessions live in **Team Brain**, and anyone on the project can turn them into lessons.
+
+1. **One-time database setup** (whoever runs your Supabase project): open the Supabase dashboard, go to *SQL Editor*, and run [`backend/schema_sessions.sql`](backend/schema_sessions.sql). If saving lessons fails with a "row-level security" error, also run `ALTER TABLE public.cue_cards DISABLE ROW LEVEL SECURITY;`.
+2. **Link a repo to a team project**, once per repo, from inside the folder:
+   ```bash
+   cue link
+   ```
+   This writes `.cue/project.json`. Commit it to link everyone who clones the repo, or add `.cue/` to `.gitignore` to keep it to yourself. `cue unlink` stops sharing, and `cue status` shows what this folder is linked to.
+3. **Code as usual** with Gemini CLI or Antigravity. Edits in linked folders appear under your name in your teammates' Team Brain.
+
+> [!WARNING]
+> Sharing uploads the code changes you make in linked folders, not just summaries. Obvious secrets (API keys, tokens, passwords) are masked, files like `.env` and `*.pem` are never uploaded with their contents, and command lines are never uploaded. This is best-effort. With row-level security disabled, anyone holding your project's Supabase key can read the shared rows, so only link repos you are comfortable sharing with the team.
+
+---
+
 ## Troubleshooting & Common Mistakes
 
 | What happened | Why it happened | The Fix |

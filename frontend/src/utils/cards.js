@@ -35,17 +35,35 @@ export function normalize(card, source) {
     file: card.file || '',
     category: card.category || 'architecture',
     source, // 'mine' or a teammate's name
+    authorId: card.user_id ? String(card.user_id) : '',
+    time: Date.parse(card.timestamp) || 0, // 0 when the timestamp isn't a full date (cards made this session)
   };
 }
 
-// Builds the single list of lessons: your own work first, then each teammate's.
-export function buildLessons(myCards, teamCards) {
-  const mine = myCards.map((c) => normalize(c, 'mine'));
-  const mineIds = new Set(mine.map((c) => c.id));
-  const others = teamCards
-    .filter((c) => c.author !== LOCAL_AUTHOR && !mineIds.has(String(c.id)))
-    .map((c) => normalize(c, c.author || 'A teammate'));
-  return [...mine, ...others];
+// Mirrors the backend: 'dhweya.modi@outlook.com' -> 'Dhweya Modi'.
+export function friendlyName(email) {
+  if (!email || !String(email).includes('@')) return 'Teammate';
+  const [local, domain] = String(email).split('@');
+  if (domain.endsWith('team.internal') && local.startsWith('user-')) return 'Teammate';
+  const words = local.split(/[._\-+]+/).map((w) => w.replace(/\d+$/, '')).filter(Boolean);
+  return words.map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(' ') || 'Teammate';
+}
+
+// Builds the single list of lessons. A project's cards include every teammate's, so each one is
+// sorted into "yours" or a teammate's by who wrote it, not by which list it arrived in.
+export function buildLessons(myCards, teamCards, meId) {
+  const isMine = (c) => (c.user_id && meId ? c.user_id === meId : !c.author || c.author === LOCAL_AUTHOR);
+
+  // The team copy carries the author details, so it wins when the same card is in both lists.
+  const byId = new Map();
+  [...myCards, ...teamCards].forEach((c) => {
+    const id = String(c.id);
+    byId.set(id, { ...(byId.get(id) || {}), ...c });
+  });
+
+  const all = [...byId.values()].map((c) => normalize(c, isMine(c) ? 'mine' : (c.author || 'A teammate')));
+  // Your own work first, then teammates, newest first within each.
+  return all.sort((a, b) => (a.source === 'mine' ? 0 : 1) - (b.source === 'mine' ? 0 : 1) || b.time - a.time);
 }
 
 export function sourceLabel(source) {
@@ -65,4 +83,27 @@ export function shuffledOrder(n) {
     [order[i], order[j]] = [order[j], order[i]];
   }
   return order;
+}
+
+// "5 min ago" style labels for live activity. Timestamps from the server carry a UTC offset.
+export function timeAgo(iso) {
+  const t = Date.parse(iso);
+  if (!t) return '';
+  const seconds = Math.max(0, (Date.now() - t) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? 'yesterday' : `${days} days ago`;
+}
+
+export function isLive(iso) {
+  const t = Date.parse(iso);
+  return Boolean(t) && Date.now() - t < 5 * 60 * 1000;
+}
+
+export function sourceName(source) {
+  return source === 'agy_transcript' ? 'Antigravity' : 'Gemini CLI';
 }

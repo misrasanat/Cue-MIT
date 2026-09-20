@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Send, Lightbulb, ArrowRight, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import LessonRow from '../components/LessonRow';
+import TeamSession from '../components/TeamSession';
 import { API_BASE } from '../utils/api';
-import { baseName } from '../utils/cards';
+import { baseName, friendlyName } from '../utils/cards';
 
 const SAM_QUESTIONS = [
   'Why pause between payment retries?',
@@ -22,11 +23,14 @@ function splitAnswer(text) {
   if (main.includes('\n\n\u{1F9E9} In Simple Terms:')) {
     [main, analogy] = main.split('\n\n\u{1F9E9} In Simple Terms:');
   }
-  main = main.replace(/^(Sam's Rationale:|Rationale:)\s*/i, '').trim();
+  main = main.replace(/^(.{1,60}?['’]s Rationale:|Rationale:)\s*/i, '').trim();
   return { main, analogy: analogy.trim(), tip: tip.trim() };
 }
 
-export default function TeamBrain({ lessons, statusOf, onStart, projectId }) {
+export default function TeamBrain({
+  lessons, statusOf, onStart, projectId, members = [], meId,
+  sessions = [], sessionsReady = true, sessionsError = null, token, apiKeyConfigured = false, onGenerated = () => {},
+}) {
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const [response, setResponse] = useState(null);
@@ -34,20 +38,32 @@ export default function TeamBrain({ lessons, statusOf, onStart, projectId }) {
   const [openSource, setOpenSource] = useState(null);
   const [person, setPerson] = useState(null);
 
-  const teammates = useMemo(() => {
+  // Everyone on the team, including people who haven't shared anything yet.
+  const people = useMemo(() => {
     const map = new Map();
-    lessons.filter((l) => l.source !== 'mine').forEach((l) => {
-      if (!map.has(l.source)) map.set(l.source, []);
-      map.get(l.source).push(l);
-    });
-    return map;
-  }, [lessons]);
+    const add = (key, name) => {
+      if (!map.has(key)) map.set(key, { key, name, lessons: [] });
+      return map.get(key);
+    };
+    members.filter((m) => !m.is_pending && m.user_id !== meId).forEach((m) => add(m.user_id, friendlyName(m.email)));
+    lessons.filter((l) => l.source !== 'mine').forEach((l) => add(l.authorId || l.source, l.source).lessons.push(l));
+    return [...map.values()];
+  }, [members, lessons, meId]);
 
-  const names = [...teammates.keys()];
-  const activePerson = person && teammates.has(person) ? person : names[0];
-  const suggestions = teammates.has('Sam')
+  const invited = members.filter((m) => m.is_pending);
+  const teamLessons = people.flatMap((p) => p.lessons).sort((a, b) => b.time - a.time);
+  const latest = teamLessons.slice(0, 4);
+  const activePerson = people.find((p) => p.key === person) || people[0];
+  const suggestions = people.some((p) => p.name === 'Sam')
     ? SAM_QUESTIONS
-    : [...teammates.values()].flat().slice(0, 3).map((l) => `What does ${baseName(l.file)} do, and why?`);
+    : teamLessons.slice(0, 3).map((l) => `What does ${baseName(l.file)} do, and why?`);
+  const openLesson = (l) => onStart([l.id], statusOf(l.id) === 'new' ? 'learn' : 'review');
+
+  // Teammates' coding sessions, shared live from their machines.
+  const teamSessions = sessions.filter((s) => s.user_id !== meId);
+  const liveNow = teamSessions.slice(0, 4);
+  const personSessions = activePerson ? teamSessions.filter((s) => s.user_id === activePerson.key) : [];
+  const sessionProps = { projectId, token, canGenerate: Boolean(token) && apiKeyConfigured, onGenerated };
 
   const ask = async (q) => {
     const text = (q ?? question).trim();
@@ -154,35 +170,87 @@ export default function TeamBrain({ lessons, statusOf, onStart, projectId }) {
         </section>
       )}
 
-      {names.length > 0 && (
+      {projectId && !sessionsReady && sessionsError && (
+        <div className="notice notice-warn" role="alert">
+          <div><strong>Live sessions aren&rsquo;t switched on yet.</strong><span>{sessionsError}</span></div>
+        </div>
+      )}
+
+      {liveNow.length > 0 && (
         <section className="group">
-          <div className="group-head"><h2>Browse by teammate</h2></div>
-          <div className="chips" role="group" aria-label="Teammates">
-            {names.map((n) => (
-              <button key={n} className={`chip chip-person ${n === activePerson ? 'on' : ''}`} onClick={() => setPerson(n)}>
-                <span className="avatar" aria-hidden="true">{n[0]}</span>
-                {n} <span className="count">{teammates.get(n).length}</span>
-              </button>
-            ))}
-          </div>
+          <div className="group-head"><h2>Live from your team</h2></div>
           <div className="rows">
-            {(teammates.get(activePerson) || []).map((l) => (
-              <LessonRow
-                key={l.id}
-                lesson={l}
-                status={statusOf(l.id)}
-                showSource={false}
-                onOpen={() => onStart([l.id], statusOf(l.id) === 'new' ? 'learn' : 'review')}
-              />
+            {liveNow.map((s) => <TeamSession key={`${s.user_id}-${s.id}`} session={s} {...sessionProps} />)}
+          </div>
+        </section>
+      )}
+
+      {latest.length > 0 && (
+        <section className="group">
+          <div className="group-head"><h2>Latest lessons from your team</h2></div>
+          <div className="rows">
+            {latest.map((l) => (
+              <LessonRow key={l.id} lesson={l} status={statusOf(l.id)} onOpen={() => openLesson(l)} />
             ))}
           </div>
         </section>
       )}
 
-      {names.length === 0 && !response && (
+      {people.length > 0 && (
+        <section className="group">
+          <div className="group-head"><h2>Browse by teammate</h2></div>
+          <div className="chips" role="group" aria-label="Teammates">
+            {people.map((p) => (
+              <button key={p.key} className={`chip chip-person ${p.key === activePerson?.key ? 'on' : ''}`} onClick={() => setPerson(p.key)}>
+                <span className="avatar" aria-hidden="true">{p.name[0]}</span>
+                {p.name} <span className="count">{p.lessons.length}</span>
+              </button>
+            ))}
+          </div>
+          {personSessions.length > 0 && (
+            <>
+              <h3 className="subhead">Recent sessions</h3>
+              <div className="rows">
+                {personSessions.map((sess) => (
+                  <TeamSession key={sess.id} session={sess} showAuthor={false} {...sessionProps} />
+                ))}
+              </div>
+            </>
+          )}
+          {activePerson && activePerson.lessons.length > 0 && (
+            <>
+              {personSessions.length > 0 && <h3 className="subhead">Lessons</h3>}
+              <div className="rows">
+                {activePerson.lessons.map((l) => (
+                  <LessonRow key={l.id} lesson={l} status={statusOf(l.id)} showSource={false} onOpen={() => openLesson(l)} />
+                ))}
+              </div>
+            </>
+          )}
+          {activePerson && activePerson.lessons.length === 0 && personSessions.length === 0 && (
+            <div className="empty empty-flat">
+              <h3>Nothing from {activePerson.name} yet</h3>
+              <p className="muted">
+                Once {activePerson.name} runs <code>cue link</code> in a project folder and codes with Gemini CLI or Antigravity,
+                their sessions show up here live.
+              </p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {invited.length > 0 && (
+        <p className="muted small">Invited, not joined yet: {invited.map((m) => m.email).join(', ')}</p>
+      )}
+
+      {people.length === 0 && !response && (
         <div className="empty">
-          <h2>No teammate notes yet</h2>
-          <p className="muted">When your teammates use Cue, what they built shows up here so you can ask about it.</p>
+          <h2>{projectId ? 'Just you so far' : 'No teammate notes yet'}</h2>
+          <p className="muted">
+            {projectId
+              ? 'Invite a teammate from the Team menu at the top. Once they turn a session into lessons, it shows up here.'
+              : 'When your teammates use Cue, what they built shows up here so you can ask about it.'}
+          </p>
         </div>
       )}
     </div>

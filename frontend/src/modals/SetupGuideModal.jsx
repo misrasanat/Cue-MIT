@@ -41,9 +41,18 @@ export default function SetupGuideModal({ user, onClose }) {
         </div>
       </div>
 
+      <div className="setup-step">
+        <span className="step-num">4</span>
+        <div>
+          <strong>Share a project with your team (optional)</strong>
+          <Command text="cue link" />
+          <p className="muted small">Run it inside a project folder and pick your team&rsquo;s project. Only linked folders are shared, and secrets are masked.</p>
+        </div>
+      </div>
+
       <div className="callout callout-cool">
         <strong>That&rsquo;s it</strong>
-        <span>Use your assistant as normal. When you&rsquo;re ready, come back and turn the session into lessons.</span>
+        <span>Use your assistant as normal. In a linked folder your teammates see your sessions live, and anyone can turn them into lessons.</span>
       </div>
     </Modal>
   );

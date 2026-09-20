@@ -17,7 +17,7 @@ function filesLabel(files) {
   return `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`;
 }
 
-export default function SessionsModal({ token, apiKeyConfigured, onClose, onGenerated, onSimulate }) {
+export default function SessionsModal({ token, project, apiKeyConfigured, onClose, onGenerated, onSimulate }) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
@@ -44,7 +44,11 @@ export default function SessionsModal({ token, apiKeyConfigured, onClose, onGene
   const handleGenerate = async (sessionId) => {
     setGeneratingId(sessionId);
     try {
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      // Sending the active project is what lets teammates see the lessons made from this session.
+      const headers = {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(project?.id ? { 'X-Project-Id': project.id } : {}),
+      };
       const res = await fetch(`${API_BASE}/sessions/${sessionId}/generate`, { method: 'POST', headers });
       const data = await res.json();
       let msg;
@@ -53,6 +57,10 @@ export default function SessionsModal({ token, apiKeyConfigured, onClose, onGene
       } else if (data.created > 0) {
         msg = `Made ${data.created} new ${data.created > 1 ? 'lessons' : 'lesson'}. Find ${data.created > 1 ? 'them' : 'it'} in Learn.`;
         if (data.deferred > 0) msg += ` ${data.deferred} more ${data.deferred > 1 ? 'files are' : 'file is'} waiting, so press the button again.`;
+        // Signed-in lessons are meant to reach the team. Say so plainly when the shared database refused them.
+        if (data.share_expected && data.shared < data.created) {
+          msg += ' Only you can see them for now: saving to your team’s shared database was blocked, so teammates won’t get them yet.';
+        }
       } else if (data.already_generated > 0) {
         msg = 'You already have lessons for these changes.';
       } else {
@@ -78,6 +86,7 @@ export default function SessionsModal({ token, apiKeyConfigured, onClose, onGene
     >
       <p className="muted">
         Pick a session and Cue will turn what changed into lessons.
+        {token && project && <> They&rsquo;ll be shared with <strong>{project.name}</strong>, so your team can learn from them too.</>}
         {!apiKeyConfigured && ' (No AI key yet, so you’ll get simple sample lessons.)'}
       </p>
 

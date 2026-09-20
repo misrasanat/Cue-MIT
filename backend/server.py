@@ -29,7 +29,7 @@ from watcher import TranscriptWatcher
 from supabase_client import (
     get_user_id_from_token,
     get_user_info_from_token,
-    save_cue_card_to_db,
+    save_cue_card,
     get_user_cue_cards,
     get_project_cue_cards,
     create_organization,
@@ -43,7 +43,19 @@ from supabase_client import (
     get_invite,
     accept_invite,
     register_user_email,
+    get_project_member_emails,
+    friendly_name,
+    upsert_project_session,
+    insert_session_events,
+    list_project_sessions,
+    list_recent_session_events,
+    get_session_events,
+    get_session_carded,
+    add_session_carded,
 )
+import supabase_client
+from project_link import find_link
+from share_sync import ShareSync, prepare_event
 from seed_data import SAM_CUE_CARDS
 
 # Load environment variables from .env if present
@@ -160,6 +172,9 @@ def _save_sessions():
 
 sessions = _load_sessions()
 
+# Pushes activity from linked repos to the team database in the background (see share_sync.py).
+share = ShareSync(supabase_client)
+
 
 def _extract_diff(tool_input, tool_response):
     """Best available diff/content for an edit, capped so it stays cheap to store and send."""
@@ -178,40 +193,81 @@ def _session_for(session_id, source):
     })
 
 
-def record_session_event(session_id, event, tool_name, tool_input, tool_response, project_id=None):
-    """Append an edit/command/intent event to its session log (no AI call)."""
+def record_session_event(session_id, event, tool_name, tool_input, tool_response, project_id=None, user_id=None):
+    """Append an edit/command/intent event to its session log (no AI call), and share it with the team if the repo is linked."""
     now = datetime.datetime.now()
+    now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    to_share = None
     with sessions_lock:
         s = _session_for(session_id, event.get("source", "gemini_cli"))
         s["last_activity"] = now.isoformat(timespec="seconds")
-        if project_id:
-            s["project_id"] = project_id
+
+        # A repo is only shared once it has been linked with `cue link`. The link is found from the
+        # edited file (which works for Antigravity too), or from the hook's own working folder.
+        link = find_link(tool_input.get("file_path")) if tool_name in EDIT_TOOLS else None
+        effective_project = (link or {}).get("project_id") or project_id
+        if effective_project:
+            s["project_id"] = effective_project
+
+        new_event = None
         if tool_name == "update_topic":
             s["last_intent"] = tool_input.get("summary", "") or tool_input.get("strategic_intent", "")
         elif tool_name in EDIT_TOOLS:
-            s["events"].append({
+            new_event = {
                 "ts": now.strftime("%H:%M:%S"),
+                "at": now_utc,
                 "kind": "edit",
                 "tool": tool_name,
                 "file": tool_input.get("file_path", ""),
                 "summary": tool_input.get("summary") or s["last_intent"],
                 "diff": _extract_diff(tool_input, tool_response),
-            })
+            }
         else:
-            s["events"].append({
+            new_event = {
                 "ts": now.strftime("%H:%M:%S"),
+                "at": now_utc,
                 "kind": "command",
                 "tool": tool_name,
                 "file": "",
                 "summary": str(tool_input.get("summary", ""))[:200],
                 "diff": "",
-            })
+            }
+        if new_event:
+            s["events"].append(new_event)
+
+        # Which events go to the team: edits inside the linked repo, and the commands and intent
+        # of a session that has already started sharing. Edits elsewhere stay on this machine.
+        if user_id:
+            sharing = s.get("share")
+            if tool_name in EDIT_TOOLS and effective_project and not sharing:
+                sharing = s["share"] = {"project_id": effective_project, "edits": 0, "commands": 0,
+                                        "root": (link or {}).get("root", "")}
+            if sharing and (tool_name == "update_topic" or new_event is not None):
+                event_belongs = tool_name != "update_topic" and (
+                    tool_name not in EDIT_TOOLS or effective_project == sharing["project_id"])
+                if new_event is not None and event_belongs:
+                    sharing["edits" if new_event["kind"] == "edit" else "commands"] += 1
+                header = {
+                    "id": session_id, "user_id": user_id, "project_id": sharing["project_id"],
+                    "source": s.get("source", "gemini_cli"), "started_at": s.setdefault("started_utc", now_utc),
+                    "last_activity": now_utc, "last_intent": s.get("last_intent", "")[:500],
+                    "edit_count": sharing["edits"], "command_count": sharing["commands"],
+                }
+                row = None
+                if new_event is not None and event_belongs:
+                    row = prepare_event(new_event, sharing.get("root"))
+                    row.update(session_id=session_id, user_id=user_id, project_id=sharing["project_id"])
+                to_share = (header, row)
+
         del s["events"][:-MAX_EVENTS_PER_SESSION]
         if len(sessions) > MAX_SESSIONS:
             oldest = sorted(sessions, key=lambda k: sessions[k].get("last_activity", ""))
             for k in oldest[:len(sessions) - MAX_SESSIONS]:
                 del sessions[k]
         _save_sessions()
+
+    if to_share:
+        share.submit(*to_share)
 
 
 def _changed_lines(diff):
@@ -360,7 +416,8 @@ def capture():
     # Log only. Cards are generated on demand via POST /sessions/<id>/generate,
     # so no model call ever happens in the background here.
     if tool_name == "update_topic" or tool_name in EDIT_TOOLS or tool_name in COMMAND_TOOLS:
-        record_session_event(session_id, event, tool_name, tool_input, tool_response, project_id=project_id)
+        record_session_event(session_id, event, tool_name, tool_input, tool_response,
+                             project_id=project_id, user_id=user_id)
         return jsonify({"status": "logged", "session_id": session_id})
 
     return jsonify({"status": "ignored", "tool_name": tool_name})
@@ -390,26 +447,22 @@ def list_sessions():
     return jsonify(out)
 
 
-@app.route("/sessions/<session_id>/generate", methods=["POST"])
-def generate_session_cards(session_id):
-    """Turn a session's logged edits into Cue Cards. One model call per changed file."""
-    user_id = get_user_id_from_token(request.headers.get("Authorization"))
-
-    with sessions_lock:
-        s = sessions.get(session_id)
-        if not s:
-            return jsonify({"status": "not_found"}), 404
-        edits = [dict(e) for e in s["events"] if e["kind"] == "edit"]
-        already = set(s.get("carded", []))
-        mocked = set(s.get("mocked", []))  # template cards made without an API key
-
-    # Group every edit to the same file into one change so it costs one call, not one per edit
+def _group_edits_by_file(edits):
     by_file = {}
     for e in edits:
-        if e["file"]:
+        if e.get("file"):
             by_file.setdefault(e["file"], []).append(e)
+    return by_file
 
+
+def _make_cards(by_file, already, mocked, project_id, owner_id, allow_mock=True, keep_local=True):
+    """
+    One model call per changed file. Shared by a user's own sessions and by teammates' shared sessions.
+    `owner_id` is whose work the lessons are about, and where they are saved. `keep_local` also keeps
+    them in this server's memory, which only makes sense for the user's own sessions.
+    """
     created, skipped, done_before, deferred = [], 0, 0, 0
+    shared, share_error = 0, None  # how many cards actually reached the shared database
     newly_carded, newly_mocked = [], []
     for file_path, group in by_file.items():
         diff = "\n...\n".join(e["diff"] for e in group if e["diff"])[:MAX_DIFF_CHARS]
@@ -429,34 +482,157 @@ def generate_session_cards(session_id):
 
         card = build_card(file_path, intent_text, diff, group[-1]["ts"])
         if card is not None and card.get("generator") == "fallback-mock":
+            if not allow_mock:
+                skipped += 1  # placeholder cards must never enter the team's knowledge
+                continue
             newly_mocked.append(digest)
         else:
             newly_carded.append(digest)
         if card is None:
             skipped += 1
             continue
-        project_id = s.get("project_id") or request.headers.get("X-Project-Id")
         if project_id:
             card["project_id"] = project_id
-        cards.append(card)
-        if user_id:
-            save_cue_card_to_db(user_id, card, project_id=project_id)
+        if keep_local:
+            cards.append(card)
+        if owner_id:
+            outcome = save_cue_card(owner_id, card, project_id=project_id)
+            if outcome["shared"]:
+                shared += 1
+            elif share_error is None:
+                share_error = outcome["error"]
         created.append(card)
 
-    if newly_carded or newly_mocked:
-        with sessions_lock:
-            sessions[session_id].setdefault("carded", []).extend(newly_carded)
-            sessions[session_id].setdefault("mocked", []).extend(newly_mocked)
-            _save_sessions()
+    return {
+        "created": created, "skipped": skipped, "done_before": done_before, "deferred": deferred,
+        "shared": shared, "share_error": share_error,
+        "newly_carded": newly_carded, "newly_mocked": newly_mocked,
+    }
 
+
+def _generate_response(result, has_owner):
     return jsonify({
         "status": "ok",
-        "created": len(created),
-        "skipped_trivial": skipped,
-        "already_generated": done_before,
-        "deferred": deferred,  # click again to process the rest
-        "cards": created,
+        "created": len(result["created"]),
+        "skipped_trivial": result["skipped"],
+        "already_generated": result["done_before"],
+        "deferred": result["deferred"],  # click again to process the rest
+        "cards": result["created"],
+        # `shared` is how many lessons reached the team database; a signed-in user expects all of them.
+        "shared": result["shared"],
+        "share_error": result["share_error"],
+        "share_expected": has_owner,
     })
+
+
+@app.route("/sessions/<session_id>/generate", methods=["POST"])
+def generate_session_cards(session_id):
+    """Turn a session's logged edits into Cue Cards. One model call per changed file."""
+    user_id = get_user_id_from_token(request.headers.get("Authorization"))
+
+    with sessions_lock:
+        s = sessions.get(session_id)
+        if not s:
+            return jsonify({"status": "not_found"}), 404
+        edits = [dict(e) for e in s["events"] if e["kind"] == "edit"]
+        already = set(s.get("carded", []))
+        mocked = set(s.get("mocked", []))  # template cards made without an API key
+        shared_project = (s.get("share") or {}).get("project_id")
+        project_id = s.get("project_id") or request.headers.get("X-Project-Id")
+
+    # A teammate may already have made lessons from this shared session; don't pay for them twice.
+    if shared_project and user_id:
+        already |= set(get_session_carded(shared_project, user_id, session_id))
+
+    result = _make_cards(_group_edits_by_file(edits), already, mocked, project_id, user_id)
+
+    if result["newly_carded"] or result["newly_mocked"]:
+        with sessions_lock:
+            sessions[session_id].setdefault("carded", []).extend(result["newly_carded"])
+            sessions[session_id].setdefault("mocked", []).extend(result["newly_mocked"])
+            _save_sessions()
+    if shared_project and user_id and result["newly_carded"]:
+        add_session_carded(shared_project, user_id, session_id, result["newly_carded"])
+
+    return _generate_response(result, bool(user_id))
+
+
+# ==============================================================================
+# Teammates' live sessions (see schema_sessions.sql, share_sync.py)
+# ==============================================================================
+
+def _share_hint(err):
+    text = str(err or "")
+    if any(marker in text for marker in ("PGRST205", "42P01", "does not exist", "schema cache")):
+        return ("Live sharing isn't set up in your team's database yet. "
+                "Run backend/schema_sessions.sql in the Supabase SQL editor.")
+    return "Couldn't reach your team's live sessions: " + text[:160]
+
+
+@app.route("/share/status", methods=["GET"])
+def share_status():
+    """How live sharing from this computer is going, for the Settings screen."""
+    state = share.status()
+    with sessions_lock:
+        linked = sum(1 for s in sessions.values() if s.get("share"))
+    return jsonify({**state, "linked_sessions": linked, "hint": _share_hint(state["error"]) if state["error"] else None})
+
+
+@app.route("/projects/<project_id>/sessions", methods=["GET"])
+def api_project_sessions(project_id):
+    """Recent coding sessions from everyone on the project, newest first. Diffs are left out to keep it light."""
+    rows, err = list_project_sessions(project_id)
+    if err:
+        return jsonify({"sessions": [], "ready": False, "error": _share_hint(err)})
+    events, _ = list_recent_session_events(project_id)
+
+    grouped = {}
+    for e in events:  # newest first
+        grouped.setdefault((e["session_id"], str(e["user_id"])), []).append(e)
+
+    emails = get_project_member_emails(project_id)
+    out = []
+    for r in rows:
+        uid = str(r["user_id"])
+        evs = grouped.get((r["id"], uid), [])
+        email = emails.get(uid, "")
+        out.append({
+            "id": r["id"], "user_id": uid,
+            "author": friendly_name(email), "author_email": email,
+            "source": r.get("source", ""), "started_at": r.get("started_at"),
+            "last_activity": r.get("last_activity"), "last_intent": r.get("last_intent", ""),
+            "edit_count": r.get("edit_count", 0), "command_count": r.get("command_count", 0),
+            "cards_generated": len(r.get("carded") or []),
+            "files": list(dict.fromkeys(e["file"] for e in evs if e.get("kind") == "edit" and e.get("file"))),
+            "events": [{k: e.get(k) for k in ("at", "kind", "file", "summary")} for e in reversed(evs[:12])],
+        })
+    return jsonify({"sessions": out, "ready": True, "error": None})
+
+
+@app.route("/projects/<project_id>/sessions/<owner_id>/<session_id>/generate", methods=["POST"])
+def api_generate_shared_session(project_id, owner_id, session_id):
+    """Make lessons from a teammate's shared session, using the viewer's AI key. The lessons belong to the teammate."""
+    viewer_id = get_user_id_from_token(request.headers.get("Authorization"))
+    if not viewer_id:
+        return jsonify({"error": "Sign in to make lessons from your team's sessions."}), 401
+    if viewer_id not in get_project_member_emails(project_id):
+        return jsonify({"error": "Only members of this project can do that."}), 403
+    if not client:
+        return jsonify({"error": "needs_ai_key",
+                        "message": "Making lessons from a teammate's session needs an AI key. Add one in Settings."}), 400
+
+    events, err = get_session_events(project_id, owner_id, session_id)
+    if err:
+        return jsonify({"error": _share_hint(err)}), 502
+    edits = [{"file": e["file"], "diff": e.get("diff") or "", "summary": e.get("summary") or "", "ts": str(e.get("at"))}
+             for e in events if e.get("kind") == "edit" and e.get("file") and e["file"] != "(sensitive file)"]
+
+    already = set(get_session_carded(project_id, owner_id, session_id))
+    result = _make_cards(_group_edits_by_file(edits), already, set(), project_id, owner_id,
+                         allow_mock=False, keep_local=False)
+    if result["newly_carded"]:
+        add_session_carded(project_id, owner_id, session_id, result["newly_carded"])
+    return _generate_response(result, True)
 
 
 @app.route("/cards", methods=["GET"])
@@ -470,7 +646,9 @@ def get_cards():
                 formatted_cards.append({
                     "id": str(item.get("id")),
                     "project_id": item.get("project_id"),
-                    "author": item.get("author_email") or "Teammate",
+                    "user_id": item.get("user_id"),
+                    "author": item.get("author_name") or "Teammate",
+                    "author_email": item.get("author_email") or "",
                     "file": item.get("file_path"),
                     "decision": item.get("decision"),
                     "why": item.get("why"),
@@ -696,13 +874,15 @@ def get_all_collective_cards(project_id=None):
             pool.append({
                 "id": str(c.get("id")),
                 "project_id": c.get("project_id"),
+                "user_id": c.get("user_id"),
                 "file": c.get("file_path"),
                 "decision": c.get("decision"),
                 "plain_title": c.get("decision", ""),
                 "why": c.get("why"),
                 "analogy": "",
-                "mentor_tip": "Captured during project development.",
-                "author": c.get("author_email") or "Teammate",
+                "mentor_tip": "",
+                "author": c.get("author_name") or "Teammate",
+                "author_email": c.get("author_email") or "",
                 "author_role": "Team Contributor",
                 "category": c.get("category", "architecture"),
                 "alternatives": c.get("alternatives", []),
@@ -720,8 +900,8 @@ def get_all_collective_cards(project_id=None):
                 card_copy["author"] = "You (Local Dev)"
             pool.append(card_copy)
 
-    # 3. Fallback to Sam's pre-seeded historical cards if pool is empty or no project_id
-    if not pool:
+    # 3. Sam's demo cards are only for the no-project demo. A real project must never show fake teammates.
+    if not pool and not project_id:
         for sc in SAM_CUE_CARDS:
             pool.append(dict(sc))
 
@@ -805,8 +985,14 @@ def ask_team():
     matched_cards = retrieve_relevant_cards(question, all_cards, max_results=2)
 
     if not matched_cards:
+        if project_id:
+            not_found = ("I couldn't find anything about that in your team's notes yet. "
+                         "Try naming a file or feature a teammate worked on, or check back once more of the team has made lessons from their sessions.")
+        else:
+            not_found = ("I couldn't find any architectural decisions or Cue Cards in the team pool matching your question. "
+                         "Try asking about payment retry logic, backoff jitter, error classification, idempotency keys, or circuit breakers.")
         return jsonify({
-            "answer": "I couldn't find any architectural decisions or Cue Cards in the team pool matching your question. Try asking about payment retry logic, backoff jitter, error classification, idempotency keys, or circuit breakers.",
+            "answer": not_found,
             "sources": [],
             "query": question
         })
