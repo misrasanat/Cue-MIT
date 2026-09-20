@@ -79,7 +79,7 @@ export default function SettingsModal({ session, apiKeyConfigured, onKeyChanged,
           <p className="muted">
             {apiKeyConfigured
               ? 'Connected. Lessons are written about your actual code.'
-              : 'Not connected, so you’ll see sample explanations. Add a Gemini key for lessons about your code.'}
+              : 'Not connected, so you’ll only see placeholder lessons. Add META_API_KEY to backend/.env and restart Cue.'}
           </p>
         </div>
         <div className="inline-form">
