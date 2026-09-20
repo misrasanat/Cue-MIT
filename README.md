@@ -138,6 +138,43 @@ Cue can show a teammate's coding sessions live in **Team Brain**, and anyone on 
 
 ---
 
+## Team Brain: asking questions about your team's work
+
+Ask things like *"What has Dhweya been working on?"*, *"Why did she add a random delay to retries?"* or *"What changed in auth.py?"* and Cue answers from your team's lessons **and** live coding sessions, with numbered sources you can open.
+
+**How it stays accurate and cheap.** A local search (no AI, no cost) works out who and when you mean, ranks the team's notes, and picks the few that matter. Only those go to the model (Meta's `muse-spark-1.3`), which writes a short, cited answer. Repeat questions are answered from a cache and cost nothing, and if nothing relevant exists the model is never called.
+
+**Set up (once per computer)**
+1. Get a key from the [Meta Model API](https://ai.developer.meta.com) and add it to `backend/.env` (this file is git-ignored, so never commit it):
+   ```env
+   META_API_KEY=your_meta_api_key_here
+   ```
+   If you run Cue from pip instead of this repo, set `META_API_KEY` as an environment variable.
+2. Run [`backend/schema_llm.sql`](backend/schema_llm.sql) once in the Supabase SQL editor. It creates the shared spending ledger. Until it exists, each computer only gets half the spending limit, because it can't see what a teammate spent.
+
+**Spending limit.** Meta offers no billing cap of its own, so Cue enforces one before every model call: **$25 total for the whole team**, $5 per day, and 120 calls per hour. When the total is reached, smart answers stop, Team Brain keeps answering from your notes without the AI, and the addresses in `BUDGET_ALERT_EMAILS` are alerted once. Change the limits in `backend/.env`:
+
+```env
+LLM_BUDGET_USD=25
+LLM_DAILY_USD=5
+BUDGET_ALERT_EMAILS=you@example.com,teammate@example.com
+```
+
+To actually **send** the alert email, Cue needs an account to send from. For Gmail, create an [app password](https://myaccount.google.com/apppasswords) and add:
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_USER=you@example.com
+SMTP_PASSWORD=your-16-character-app-password
+```
+
+(A `RESEND_API_KEY` works too.) Without this the alert still appears in the app and is saved to `~/.cue/budget_alert.txt`. The amounts use Meta's published standard prices ($1.25 / $4.25 per million input / output tokens); override with `META_PRICE_INPUT`, `META_PRICE_CACHED` and `META_PRICE_OUTPUT` if they change.
+
+> [!IMPORTANT]
+> Meta's cheaper `-contributor` models let Meta **train on your prompts**, and your prompts include your team's code. Cue refuses to use them unless you set `META_ALLOW_TRAINING_TIER=1`.
+
+---
+
 ## Troubleshooting & Common Mistakes
 
 | What happened | Why it happened | The Fix |
