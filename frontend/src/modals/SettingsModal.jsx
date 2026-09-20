@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { Settings, User, Terminal, Layers, Activity, Key, Check, RotateCcw } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Settings, User, Terminal, Layers, Activity, Key, Check, RotateCcw, Radio } from 'lucide-react';
 import Modal from '../components/Modal';
 import { API_BASE } from '../utils/api';
+import { timeAgo } from '../utils/cards';
 
 export default function SettingsModal({ session, apiKeyConfigured, onKeyChanged, onOpen, onStartOver, onClose }) {
   const [apiKey, setApiKey] = useState(() => {
@@ -9,6 +10,16 @@ export default function SettingsModal({ session, apiKeyConfigured, onKeyChanged,
   });
   const [status, setStatus] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [share, setShare] = useState(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/share/status`).then((r) => (r.ok ? r.json() : null)).then(setShare).catch(() => setShare(null));
+  }, []);
+
+  let shareText = 'Checking\u2026';
+  if (share?.error) shareText = share.hint || 'Something is blocking sharing with your team.';
+  else if (share?.last_ok) shareText = `Working. Last sent ${timeAgo(share.last_ok)}.`;
+  else if (share) shareText = 'Nothing shared yet. Run cue link in a project folder, then code as usual.';
 
   const saveKey = async (e) => {
     e.preventDefault();
@@ -53,6 +64,13 @@ export default function SettingsModal({ session, apiKeyConfigured, onKeyChanged,
           <p className="muted">Turn what you built into lessons.</p>
         </div>
         <button className="btn btn-soft" onClick={() => onOpen('sessions')}>Open</button>
+      </section>
+
+      <section className="setting">
+        <div className="setting-text">
+          <h3><Radio size={16} aria-hidden="true" /> Live sharing</h3>
+          <p className={share?.error ? 'status-warn' : 'muted'}>{shareText}</p>
+        </div>
       </section>
 
       <form className="setting setting-col" onSubmit={saveKey}>

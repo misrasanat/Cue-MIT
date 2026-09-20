@@ -3,7 +3,13 @@ import os
 import sys
 import json
 import urllib.request
+import urllib.parse
 from pathlib import Path
+
+try:
+    from project_link import find_link, repo_root, write_link, remove_link
+except ImportError:  # installed as the backend package
+    from .project_link import find_link, repo_root, write_link, remove_link
 
 CREDENTIALS_FILE = Path.home() / ".cue" / "credentials.json"
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://dutkvelgcwmczaxbdyjm.supabase.co")
@@ -89,15 +95,99 @@ def interactive_cli():
     else:
         login_or_signup(email, password, is_signup=False)
 
+def _rest_get(path, token):
+    req = urllib.request.Request(
+        f"{SUPABASE_URL}/rest/v1/{path}",
+        headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {token}"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def fetch_projects(user_id, token):
+    """The team projects this user belongs to, as [{"id", "name"}]."""
+    memberships = _rest_get(f"project_members?select=project_id&user_id=eq.{urllib.parse.quote(user_id)}", token)
+    ids = [m["project_id"] for m in memberships]
+    if not ids:
+        return []
+    return _rest_get(f"projects?select=id,name&id=in.({','.join(ids)})&order=created_at.desc", token)
+
+
+def link_cli():
+    """`cue link`: choose which team project this folder's coding sessions are shared with."""
+    creds = get_saved_credentials()
+    if not creds or not creds.get("access_token") or not creds.get("user_id"):
+        print("You're not logged in yet. Run 'cue' first, then try 'cue link' again.")
+        return
+
+    folder = repo_root()
+    existing = find_link(str(folder / "x"))
+    if existing:
+        print(f"This folder is already linked to '{existing['project_name'] or existing['project_id']}'.")
+        if input("Link it to a different project? (y/N): ").strip().lower() != "y":
+            return
+
+    try:
+        projects = fetch_projects(creds["user_id"], creds["access_token"])
+    except Exception as e:
+        print(f"Couldn't load your projects: {e}\nYour login may have expired. Run 'cue' to log in again.")
+        return
+    if not projects:
+        print("You're not in any team project yet. Create or join one in the Cue app first, then run 'cue link' again.")
+        return
+
+    print(f"\nWhich team project should sessions in {folder} be shared with?\n")
+    for i, project in enumerate(projects, 1):
+        print(f"  {i}. {project['name']}")
+    choice = input("\nEnter a number (or press Enter to cancel): ").strip()
+    if not choice:
+        print("Nothing changed.")
+        return
+    try:
+        project = projects[int(choice) - 1]
+    except (ValueError, IndexError):
+        print("That wasn't one of the options. Nothing changed.")
+        return
+
+    target = write_link(folder, project["id"], project["name"])
+    print(f"\nLinked. From now on your coding sessions in this folder are shared with '{project['name']}'.")
+    print(f"  Saved: {target}")
+    print("  Commit .cue/project.json to share the link with teammates, or add .cue/ to .gitignore to keep it to yourself.")
+    print("  Edits in folders that aren't linked are never shared. Run 'cue unlink' to stop sharing this folder.")
+
+
+def unlink_cli():
+    folder = repo_root()
+    if remove_link(folder):
+        print(f"Unlinked. Sessions in {folder} are no longer shared with your team.")
+    else:
+        print("This folder isn't linked to a team project.")
+
+
+def status_cli():
+    cred = get_saved_credentials()
+    if cred:
+        print(f"Logged in as: {cred.get('email')} (ID: {cred.get('user_id')})")
+    else:
+        print("Not logged in. Run 'cue' to log in.")
+    link = find_link(str(repo_root() / "x"))
+    if link:
+        print(f"This folder shares sessions with: {link['project_name'] or link['project_id']}")
+    else:
+        print("This folder isn't linked to a team project. Run 'cue link' to share its sessions.")
+
+
 def main():
-    if len(sys.argv) > 1 and sys.argv[1] == "status":
-        cred = get_saved_credentials()
-        if cred:
-            print(f"Logged in as: {cred.get('email')} (ID: {cred.get('user_id')})")
-        else:
-            print("Not logged in. Run 'cue' to log in.")
+    command = sys.argv[1] if len(sys.argv) > 1 else ""
+    if command == "status":
+        status_cli()
+    elif command == "link":
+        link_cli()
+    elif command == "unlink":
+        unlink_cli()
     else:
         interactive_cli()
+
 
 if __name__ == "__main__":
     main()
