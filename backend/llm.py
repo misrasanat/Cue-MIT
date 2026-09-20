@@ -137,7 +137,7 @@ class MetaClient:
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
         started = time.time()
-        for attempt in range(3):
+        for attempt in range(4):
             request = urllib.request.Request(f"{self.base}/chat/completions", data=payload, headers=headers)
             try:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -149,7 +149,10 @@ class MetaClient:
                     raise LLMBillingError(message) from e
                 if e.code in (401, 403):
                     raise LLMNotConfigured(f"Meta rejected the API key ({e.code}): {message}") from e
-                if e.code in (429, 500, 503) and attempt < 2:
+                # Meta's API sometimes answers a valid request with a false 404 "model was not found" (roughly one call
+                # in five). It is not billed and succeeds on retry, so treat it like any other passing error.
+                flaky_404 = e.code == 404 and "model" in message.lower() and "not found" in message.lower()
+                if (e.code in (429, 500, 503) or flaky_404) and attempt < 3:
                     retry_after = e.headers.get("Retry-After") if e.headers else None
                     time.sleep(min(float(retry_after), 8) if retry_after and retry_after.isdigit()
                                else (0.6 * 2 ** attempt) + random.random())
