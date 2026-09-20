@@ -45,6 +45,8 @@ export default function App() {
 
   const [cards, setCards] = useState([]);
   const [teamCards, setTeamCards] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [teamSessions, setTeamSessions] = useState({ sessions: [], ready: true, error: null });
   const [sessions, setSessions] = useState([]);
   const [online, setOnline] = useState(true);
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
@@ -133,6 +135,32 @@ export default function App() {
     }
   }, [activeProject?.id]);
 
+  const fetchMembers = useCallback(async () => {
+    if (!activeProject?.id) {
+      setMembers([]);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/projects/${activeProject.id}/members`);
+      if (res.ok) setMembers(await res.json());
+    } catch {
+      // Offline is already surfaced by the cards poll.
+    }
+  }, [activeProject?.id]);
+
+  const fetchTeamSessions = useCallback(async () => {
+    if (!activeProject?.id) {
+      setTeamSessions({ sessions: [], ready: true, error: null });
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/projects/${activeProject.id}/sessions`);
+      if (res.ok) setTeamSessions(await res.json());
+    } catch {
+      // Offline is already surfaced by the cards poll.
+    }
+  }, [activeProject?.id]);
+
   const fetchSessions = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/sessions`);
@@ -166,18 +194,24 @@ export default function App() {
 
   // Poll gently, and only while the tab is actually being looked at.
   useEffect(() => {
+    let ticks = 0;
     const tick = () => {
       if (document.hidden) return;
       fetchCards();
       fetchTeamCards();
       fetchSessions();
+      fetchTeamSessions();
+      // The team roster changes rarely, so it refreshes every fifth poll instead of every one.
+      if (ticks % 5 === 0) fetchMembers();
+      ticks += 1;
     };
     tick();
     const interval = setInterval(tick, 6000);
     return () => clearInterval(interval);
-  }, [fetchCards, fetchTeamCards, fetchSessions]);
+  }, [fetchCards, fetchTeamCards, fetchSessions, fetchTeamSessions, fetchMembers]);
 
-  const lessons = useMemo(() => buildLessons(cards, teamCards), [cards, teamCards]);
+  const meId = session?.user?.id;
+  const lessons = useMemo(() => buildLessons(cards, teamCards, meId), [cards, teamCards, meId]);
   const pendingSessions = sessions.filter((s) => s.edit_count > 0 && !(s.cards_generated > 0)).length;
   const dueCount = lessons.filter((l) => progress.statusOf(l.id) === 'due').length;
   const name = session?.user?.email?.split('@')[0];
@@ -393,6 +427,14 @@ export default function App() {
                 statusOf={progress.statusOf}
                 onStart={startLessons}
                 projectId={activeProject?.id}
+                members={members}
+                meId={meId}
+                sessions={teamSessions.sessions}
+                sessionsReady={teamSessions.ready}
+                sessionsError={teamSessions.error}
+                token={token}
+                apiKeyConfigured={apiKeyConfigured}
+                onGenerated={() => { fetchCards(); fetchTeamCards(); fetchTeamSessions(); }}
               />
             )}
           </>
@@ -426,6 +468,7 @@ export default function App() {
       {modal === 'sessions' && (
         <SessionsModal
           token={token}
+          project={activeProject}
           apiKeyConfigured={apiKeyConfigured}
           onClose={() => setModal(null)}
           onGenerated={() => { fetchCards(); fetchTeamCards(); fetchSessions(); }}
