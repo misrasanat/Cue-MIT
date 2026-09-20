@@ -74,7 +74,8 @@ load_dotenv(override=True)
 PUBLIC = public_mode.is_public()
 
 app = Flask(__name__)
-CORS(app, origins=public_mode.cors_origins())  # Enables cross-origin requests from the web app frontend
+# Chrome asks before a public website (your Netlify site) may reach the helper on your own computer; only allow that locally.
+CORS(app, origins=public_mode.cors_origins(), allow_private_network=not PUBLIC)  # Enables cross-origin requests from the web app frontend
 if PUBLIC:
     from werkzeug.middleware.proxy_fix import ProxyFix
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)  # behind Render's proxy: use the visitor's real address for rate limits
@@ -107,14 +108,6 @@ def require_member(project_id):
         if viewer not in get_project_member_emails(project_id, force=True):
             return jsonify({"error": "You aren't a member of this project."}), 403
     return None
-
-
-@app.after_request
-def allow_private_network(response):
-    """Chrome asks permission before a public website (like your Netlify site) may reach a service on your own computer."""
-    if not PUBLIC and request.headers.get("Access-Control-Request-Private-Network"):
-        response.headers["Access-Control-Allow-Private-Network"] = "true"
-    return response
 
 
 def trusted(value):
