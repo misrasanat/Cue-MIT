@@ -13,6 +13,7 @@ Key Responsibilities:
 """
 
 import functools
+import time
 import os
 import re
 import uuid
@@ -1117,7 +1118,29 @@ def llm_status():
         "model": llm_client.model,
         "tier": llm_client.tier,
         "stats": team_qa.stats,
+        "code_version": llm_client.version,
+        "last_error": llm_client.last_error,
+        "key_shape": {"length": len(llm_client.api_key), "prefix": llm_client.api_key[:4], "has_whitespace": llm_client.api_key != llm_client.api_key.strip() or any(c.isspace() for c in llm_client.api_key)},
     })
+
+
+_last_probe = [0.0]
+
+
+@app.route("/llm/probe", methods=["GET"])
+def llm_probe():
+    """Sends one tiny request (about a hundredth of a cent) so a deploy can be checked end to end. Once a minute at most."""
+    if time.time() - _last_probe[0] < 60:
+        return jsonify({"error": "Try again in a minute."}), 429
+    _last_probe[0] = time.time()
+    outcomes = []
+    for i in range(6):
+        try:
+            llm_client.chat([{"role": "user", "content": f"Reply with the word ok ({i})"}], max_tokens=20)
+            outcomes.append("200")
+        except Exception as e:
+            outcomes.append(f"{type(e).__name__}: {str(e)[:120]}")
+    return jsonify({"outcomes": outcomes, "last_error": llm_client.last_error})
 
 
 if __name__ == "__main__":

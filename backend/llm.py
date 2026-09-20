@@ -76,6 +76,8 @@ class MetaClient:
         self.model = (model or os.environ.get("META_MODEL") or DEFAULT_MODEL).strip()
         self.timeout = timeout
         self.allow_training_tier = os.environ.get("META_ALLOW_TRAINING_TIER", "").strip() == "1"
+        self.last_error = None  # what Meta last refused, for /llm/status (never includes the key)
+        self.version = 2  # bump when the request logic changes, so /llm/status shows which code is deployed
 
     # -- configuration ---------------------------------------------------------------------------
     @property
@@ -145,6 +147,8 @@ class MetaClient:
                 break
             except urllib.error.HTTPError as e:
                 message = self._error_message(e)
+                self.last_error = {"code": e.code, "message": message[:200], "attempt": attempt + 1, "model": self.model, "base": self.base, "at": time.time()}
+                print(f"[LLM] Meta returned {e.code} on attempt {attempt + 1}: {message[:200]}", flush=True)
                 if e.code == 402:
                     raise LLMBillingError(message) from e
                 if e.code in (401, 403):
