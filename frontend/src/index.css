@@ -846,3 +846,59 @@ html { scroll-behavior: smooth; }
 .cite { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin: 0 2px; padding: 0 5px; border: 0; border-radius: 6px; background: var(--brand-soft); color: var(--brand-strong); font-family: var(--font-mono); font-size: 12px; font-weight: 500; vertical-align: 2px; transition: background 0.2s, color 0.2s; }
 .cite:hover { background: var(--brand); color: var(--on-brand); }
 .source-n { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 8px; border-radius: 6px; background: var(--brand-soft); color: var(--brand-strong); font-family: var(--font-mono); font-size: 12px; }
+
+/* ==========================================================================
+   Pitch mode: full-screen presentation overlay (laptop only, CSS transitions only)
+   ========================================================================== */
+.pitch {
+  position: fixed; inset: 0; z-index: 1000; overflow: hidden;
+  background:
+    radial-gradient(700px 500px at 100% 0%, rgba(0, 82, 255, 0.06), transparent 70%),
+    radial-gradient(600px 500px at 0% 100%, rgba(77, 124, 255, 0.05), transparent 70%),
+    var(--bg);
+}
+.pitch-corner { position: absolute; top: 28px; left: 36px; z-index: 2; transition: opacity 0.4s var(--ease); }
+.pitch-corner .brand-mark { width: 28px; height: 28px; font-size: 16px; border-radius: 8px; }
+.pitch-corner .brand-name { font-size: 20px; }
+.pitch[data-panel="4"] .pitch-corner { opacity: 0; }
+
+.pitch-panel {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 28px; padding: 0 8vw 64px; text-align: center;
+  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease), visibility 0s linear 0.5s;
+}
+.pitch-panel.is-active { opacity: 1; transform: none; visibility: visible; transition-delay: 0s; }
+.pitch-panel.is-past { opacity: 0; transform: translateX(-48px); visibility: hidden; }
+.pitch-panel.is-future { opacity: 0; transform: translateX(48px); visibility: hidden; }
+
+.pitch-hook { font-size: clamp(48px, 7vw, 96px); max-width: 16ch; }
+.pitch-sub { font-size: clamp(20px, 2.4vw, 30px); color: var(--ink-2); max-width: 32ch; }
+.pitch-caption { font-family: var(--font-display); font-size: clamp(28px, 3.4vw, 44px); }
+
+.pitch-icons { display: flex; gap: clamp(48px, 9vw, 140px); }
+.pitch-icon-item { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+.pitch-icon { width: 96px; height: 96px; padding: 28px; border-radius: var(--radius-lg); margin: 0; }
+.pitch-icon-label { font-family: var(--font-display); font-size: 30px; }
+
+.pitch-diagram { width: min(760px, 78vw); height: auto; }
+.pitch-person circle, .pitch-person path { fill: var(--ink); }
+.pitch-alone .pitch-person circle, .pitch-alone .pitch-person path { fill: var(--ink-2); }
+.pitch-alone { opacity: 0.55; }
+.pitch-bubble { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+.pitch-bubble-dot { fill: var(--ink-2); }
+.pitch-faint { fill: var(--ink-2); font-family: var(--font-body); font-size: 15px; letter-spacing: 0.08em; }
+.pitch-line { stroke: var(--brand-2); stroke-width: 1.5; opacity: 0.6; }
+.pitch-halo { fill: var(--brand-soft); stroke: var(--invert-line); stroke-width: 1; transform-box: fill-box; transform-origin: center; animation: pulse 3s ease-in-out infinite; }
+.pitch-hub { fill: var(--brand); }
+.pitch-hub-label { fill: var(--on-brand); font-family: var(--font-display); font-size: 20px; }
+
+.pitch-logo { pointer-events: none; }
+.pitch-logo-lg { gap: 20px; }
+.pitch-logo-lg .brand-mark { width: 84px; height: 84px; font-size: 48px; border-radius: 22px; }
+.pitch-logo-lg .brand-name { font-size: 84px; }
+
+.pitch-footer { position: absolute; left: 0; right: 0; bottom: 28px; display: flex; align-items: center; justify-content: center; }
+.pitch-dots { display: flex; gap: 10px; }
+.pitch-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); transition: background 0.3s, transform 0.3s; }
+.pitch-dots i.on { background: var(--brand); transform: scale(1.4); }
+.pitch-next { position: absolute; right: 36px; }

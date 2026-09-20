@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Home as HomeIcon, GraduationCap, Users, Settings as SettingsIcon, Building2, Users as UsersIcon, ChevronDown } from 'lucide-react';
+import { Home as HomeIcon, GraduationCap, Users, Settings as SettingsIcon, Building2, Users as UsersIcon, ChevronDown, Presentation, Play } from 'lucide-react';
 import { supabase } from './supabase';
 import { API_BASE, LOCAL_API_BASE } from './utils/api';
 import { buildLessons } from './utils/cards';
@@ -16,6 +16,9 @@ import AuthModal from './modals/AuthModal';
 import SetupGuideModal from './modals/SetupGuideModal';
 import DebugLogsModal from './modals/DebugLogsModal';
 import ProjectModal from './modals/ProjectModal';
+import PitchOverlay from './components/PitchOverlay';
+
+const CLOSE_PANEL = 4; // the pitch's final panel, shown by Resume Presentation
 
 const NAV = [
   { id: 'home', label: 'Home', Icon: HomeIcon },
@@ -50,6 +53,14 @@ export default function App() {
   const [sessions, setSessions] = useState([]);
   const [online, setOnline] = useState(true);
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+
+  // Pitch mode: `pitchStarted` keeps the Resume button in the navbar once the Demo button has been used.
+  const [pitchOpen, setPitchOpen] = useState(false);
+  const [pitchStarted, setPitchStarted] = useState(false);
+  const [pitchIndex, setPitchIndex] = useState(0);
+  const startPitch = () => { setPitchIndex(0); setPitchStarted(true); setPitchOpen(true); };
+  const resumePitch = () => { setPitchIndex(CLOSE_PANEL); setPitchOpen(true); };
+  const exitPitch = useCallback(() => setPitchOpen(false), []);
 
   const progress = useProgress();
   const token = session?.access_token;
@@ -371,6 +382,16 @@ export default function App() {
           </nav>
 
           <div className="topbar-end">
+            {pitchStarted && (
+              <button className="btn btn-primary btn-sm" onClick={resumePitch}>
+                <Play size={15} aria-hidden="true" />
+                <span>Resume Presentation</span>
+              </button>
+            )}
+            <button className="btn btn-soft btn-sm" onClick={startPitch}>
+              <Presentation size={15} aria-hidden="true" />
+              <span>Demo</span>
+            </button>
             {session && activeProject && (
               <button className="btn btn-soft btn-sm team-manage-btn" onClick={() => setModal('project')} aria-label="Manage team and invites">
                 <UsersIcon size={15} />
@@ -478,6 +499,7 @@ export default function App() {
       {authModal}
       {modal === 'setup' && <SetupGuideModal user={session?.user} onClose={() => setModal(null)} />}
       {modal === 'debug' && <DebugLogsModal onClose={() => setModal(null)} />}
+      {pitchOpen && <PitchOverlay index={pitchIndex} setIndex={setPitchIndex} onExit={exitPitch} />}
     </div>
   );
 }
