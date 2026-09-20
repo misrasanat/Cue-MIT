@@ -1,0 +1,36 @@
+# Render Blueprint for the Cue backend. In Render choose "New > Blueprint" and point it at this repo,
+# or copy these values into "New > Web Service" by hand. Secrets are marked sync: false, so you type them
+# into Render's dashboard and they never live in git.
+services:
+  - type: web
+    name: cue-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # One worker on purpose: the spending limit and search index live in memory, so extra workers would each keep their own copy.
+    startCommand: gunicorn server:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120
+    healthCheckPath: /health
+    envVars:
+      - key: CUE_PUBLIC_MODE
+        value: "1"
+      - key: PUBLIC_APP_URL
+        value: https://devwithcue.netlify.app
+      - key: ALLOWED_ORIGINS
+        value: https://devwithcue.netlify.app
+      - key: LLM_BUDGET_USD
+        value: "25"
+      - key: LLM_DAILY_USD
+        value: "5"
+      - key: BUDGET_ALERT_EMAILS
+        value: misrasanat123@gmail.com,dhweya.modi@gmail.com
+      - key: META_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
