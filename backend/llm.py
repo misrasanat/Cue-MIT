@@ -77,7 +77,7 @@ class MetaClient:
         self.timeout = timeout
         self.allow_training_tier = os.environ.get("META_ALLOW_TRAINING_TIER", "").strip() == "1"
         self.last_error = None  # what Meta last refused, for /llm/status (never includes the key)
-        self.version = 2  # bump when the request logic changes, so /llm/status shows which code is deployed
+        self.version = 3  # bump when the request logic changes, so /llm/status shows which code is deployed
 
     # -- configuration ---------------------------------------------------------------------------
     @property
@@ -122,13 +122,32 @@ class MetaClient:
         return (fresh * p["input"] + cached_tokens * p["cached"] + completion_tokens * p["output"]) / 1e6
 
     # -- request ---------------------------------------------------------------------------------
-    def chat(self, messages, max_tokens=1500, reasoning_effort="minimal"):
+    def fallback_models(self):
+        """Other STANDARD models to try when the main one keeps answering 'not found' (never a training-tier model)."""
+        listed = os.environ.get("META_FALLBACK_MODELS")
+        names = [m.strip() for m in listed.split(",")] if listed is not None else ["muse-spark-1.2", "muse-spark-1.1"]
+        return [m for m in names if m and m != self.model and not m.endswith("-contributor")]
+
+    def chat(self, messages, max_tokens=1500, reasoning_effort="minimal", model=None):
+        """Asks the main model; if Meta keeps saying it does not exist, quietly tries the fallbacks."""
+        candidates = [model] if model else [self.model] + self.fallback_models()
+        for i, name in enumerate(candidates):
+            try:
+                result = self._chat(messages, max_tokens, reasoning_effort, name)
+                if i:
+                    print(f"[LLM] answered by fallback model {name}", flush=True)
+                return result
+            except LLMUnavailable as e:
+                if i + 1 >= len(candidates) or "not found" not in str(e).lower():
+                    raise
+
+    def _chat(self, messages, max_tokens, reasoning_effort, model_name):
         reason = self.not_configured_reason
         if reason:
             raise LLMNotConfigured(reason)
 
         body = {
-            "model": self.model,
+            "model": model_name,
             "messages": messages,
             "max_completion_tokens": max_tokens,
             "reasoning_effort": reasoning_effort,
@@ -147,7 +166,7 @@ class MetaClient:
                 break
             except urllib.error.HTTPError as e:
                 message = self._error_message(e)
-                self.last_error = {"code": e.code, "message": message[:200], "attempt": attempt + 1, "model": self.model, "base": self.base, "at": time.time()}
+                self.last_error = {"code": e.code, "message": message[:200], "attempt": attempt + 1, "model": model_name, "base": self.base, "at": time.time()}
                 print(f"[LLM] Meta returned {e.code} on attempt {attempt + 1}: {message[:200]}", flush=True)
                 if e.code == 402:
                     raise LLMBillingError(message) from e
@@ -179,7 +198,7 @@ class MetaClient:
         return LLMResult(
             text=((choice.get("message") or {}).get("content") or "").strip(),
             prompt_tokens=prompt, cached_tokens=cached, completion_tokens=completion, reasoning_tokens=reasoning,
-            cost_usd=self.cost_of(prompt, cached, completion), model=data.get("model") or self.model,
+            cost_usd=self.cost_of(prompt, cached, completion), model=data.get("model") or model_name,
             finish_reason=choice.get("finish_reason") or "", seconds=time.time() - started,
         )
 

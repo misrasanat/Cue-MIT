@@ -1134,10 +1134,13 @@ def llm_probe():
         return jsonify({"error": "Try again in a minute."}), 429
     _last_probe[0] = time.time()
     outcomes = []
+    only = request.args.get("model")  # e.g. /llm/probe?model=muse-spark-1.2 tests exactly one model, no fallback
+    if only and (not only.startswith("muse-spark-") or only.endswith("-contributor")):
+        return jsonify({"error": "Only standard muse-spark models can be probed."}), 400
     for i in range(6):
         try:
-            llm_client.chat([{"role": "user", "content": f"Reply with the word ok ({i})"}], max_tokens=20)
-            outcomes.append("200")
+            result = llm_client.chat([{"role": "user", "content": f"Reply with the word ok ({i})"}], max_tokens=20, model=only)
+            outcomes.append("200 " + result.model)
         except Exception as e:
             outcomes.append(f"{type(e).__name__}: {str(e)[:120]}")
     return jsonify({"outcomes": outcomes, "last_error": llm_client.last_error})
