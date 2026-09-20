@@ -55,8 +55,8 @@ export default function SettingsModal({ session, apiKeyConfigured, onOpen, onSta
           <h3><Key size={16} aria-hidden="true" /> AI model</h3>
           <p className="muted">
             {apiKeyConfigured
-              ? 'Connected. Cue’s model writes lessons about your actual code.'
-              : 'Not connected, so you’ll see sample explanations. Add META_API_KEY to backend/.env and restart Cue.'}
+              ? 'Connected. Lessons are written about your actual code.'
+              : 'Not connected, so you’ll only see placeholder lessons. Add META_API_KEY to backend/.env and restart Cue.'}
           </p>
         </div>
       </section>

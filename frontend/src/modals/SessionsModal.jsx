@@ -57,10 +57,15 @@ export default function SessionsModal({ token, project, apiKeyConfigured, onClos
       } else if (data.created > 0) {
         msg = `Made ${data.created} new ${data.created > 1 ? 'lessons' : 'lesson'}. Find ${data.created > 1 ? 'them' : 'it'} in Learn.`;
         if (data.deferred > 0) msg += ` ${data.deferred} more ${data.deferred > 1 ? 'files are' : 'file is'} waiting, so press the button again.`;
+        if (data.failed > 0) msg += ` ${data.failed} couldn’t be written just now, so press the button again.`;
         // Signed-in lessons are meant to reach the team. Say so plainly when the shared database refused them.
         if (data.share_expected && data.shared < data.created) {
           msg += ' Only you can see them for now: saving to your team’s shared database was blocked, so teammates won’t get them yet.';
         }
+      } else if (data.message) {
+        msg = data.message;
+      } else if (data.failed > 0) {
+        msg = 'The AI couldn’t write these lessons just now. Nothing was lost, so try again in a moment.';
       } else if (data.already_generated > 0) {
         msg = 'You already have lessons for these changes.';
       } else {
@@ -87,7 +92,7 @@ export default function SessionsModal({ token, project, apiKeyConfigured, onClos
       <p className="muted">
         Pick a session and Cue will turn what changed into lessons.
         {token && project && <> They&rsquo;ll be shared with <strong>{project.name}</strong>, so your team can learn from them too.</>}
-        {!apiKeyConfigured && ' (The model isn’t connected yet, so you’ll get simple sample lessons.)'}
+        {!apiKeyConfigured && ' (No AI key is set up on this computer yet, so you’ll only get placeholder lessons.)'}
       </p>
 
       {sessions.length === 0 ? (

@@ -28,8 +28,13 @@ export default function TeamSession({ session, projectId, token, canGenerate, sh
         setMessage(data.message || data.error || 'Something went wrong making lessons.');
       } else if (data.created > 0) {
         setMessage(`Made ${data.created} ${data.created > 1 ? 'lessons' : 'lesson'} from ${session.author}’s work. Find ${data.created > 1 ? 'them' : 'it'} under their name.`
-          + (data.deferred > 0 ? ` ${data.deferred} more ${data.deferred > 1 ? 'files are' : 'file is'} waiting, so press the button again.` : ''));
+          + (data.deferred > 0 ? ` ${data.deferred} more ${data.deferred > 1 ? 'files are' : 'file is'} waiting, so press the button again.` : '')
+          + (data.failed > 0 ? ` ${data.failed} couldn’t be written just now, so press the button again.` : ''));
         onGenerated();
+      } else if (data.message) {
+        setMessage(data.message);
+      } else if (data.failed > 0) {
+        setMessage('The AI couldn’t write these lessons just now. Nothing was lost, so try again in a moment.');
       } else if (data.already_generated > 0) {
         setMessage('Lessons for these changes already exist.');
       } else {
