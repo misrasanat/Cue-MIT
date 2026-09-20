@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Lightbulb, Scale, Check, ArrowRight, ArrowLeft, X, Terminal, Sparkles, UserPlus, Eye, Brain } from 'lucide-react';
+import { Lightbulb, Scale, Check, ArrowRight, ArrowLeft, X, Terminal, Sparkles, UserPlus, Eye, Brain, Code } from 'lucide-react';
 
 // ---- Pitch wording: tweak here before presenting -------------------------------------------
 const COPY = {
@@ -28,6 +28,17 @@ const COPY = {
     badge: 'INTRODUCING',
     tagline: 'Understanding each other better.',
   },
+  muse: {
+    title: 'Powered by Meta Muse.',
+    sub: 'Every lesson and every Team Brain answer comes from the Meta Muse API.',
+    inLabel: 'Your team\u2019s AI sessions',
+    hub: 'Meta Muse',
+    hubNote: 'Muse API',
+    out: [
+      { key: 'lessons', Icon: Lightbulb, label: 'Lessons', note: 'Why, trade-offs, and a quick check.' },
+      { key: 'brain', Icon: Brain, label: 'Team Brain answers', note: 'Ask anything your team has built.' },
+    ],
+  },
   vision: {
     title: 'Where this goes.',
     todayLabel: 'Today',
@@ -50,9 +61,9 @@ const COPY = {
   skipLabel: 'Skip to dashboard',
 };
 
-// Panels run in order; the last one (index 6) is the closing slide.
-const LAST_LINEAR = 6;
-const TOTAL = 7;
+// Panels run in order; the last one (index 7) is the closing slide.
+const LAST_LINEAR = 7;
+const TOTAL = 8;
 const IDEA_PANEL = 3; // the slide whose caption appears on the first Next
 // ---------------------------------------------------------------------------------------------
 
@@ -188,6 +199,29 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
       </section>
 
       <section className={cls(5)} aria-hidden={index !== 5}>
+        <h2 className="pitch-title">{COPY.muse.title}</h2>
+        <div className="pitch-vision">
+          <div className="pitch-chip"><Code size={20} aria-hidden="true" /> {COPY.muse.inLabel}</div>
+          <ArrowRight className="pitch-era-arrow" size={40} aria-hidden="true" />
+          <div className="pitch-muse">
+            <Sparkles size={34} aria-hidden="true" />
+            <strong>{COPY.muse.hub}</strong>
+            <span>{COPY.muse.hubNote}</span>
+          </div>
+          <ArrowRight className="pitch-era-arrow" size={40} aria-hidden="true" />
+          <ul className="pitch-muse-out">
+            {COPY.muse.out.map(({ key, Icon, label, note }) => (
+              <li key={key} className="pitch-scope">
+                <span className="tile-icon pitch-scope-icon"><Icon size={22} aria-hidden="true" /></span>
+                <span className="pitch-scope-text"><strong>{label}</strong><span>{note}</span></span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="pitch-sub">{COPY.muse.sub}</p>
+      </section>
+
+      <section className={cls(6)} aria-hidden={index !== 6}>
         <h2 className="pitch-title">{COPY.vision.title}</h2>
         <div className="pitch-vision">
           <div className="pitch-era pitch-era-today">
@@ -213,7 +247,7 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
         </div>
       </section>
 
-      <section className={cls(6)} aria-hidden={index !== 6}>
+      <section className={cls(7)} aria-hidden={index !== 7}>
         <Logo large />
         <p className="pitch-sub" style={{ fontSize: 'clamp(24px, 3vw, 36px)', color: 'var(--ink)', fontWeight: 500 }}>
           "{COPY.close.tagline}"
