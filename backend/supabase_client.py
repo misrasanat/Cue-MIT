@@ -421,13 +421,13 @@ def friendly_name(email):
 _MEMBER_EMAIL_CACHE = {}
 _MEMBER_EMAIL_TTL = 30  # seconds; resolving members costs several queries and Team Brain polls
 
-def get_project_member_emails(project_id):
-    """Maps user_id -> email for a project's real (non-pending) members, cached briefly."""
+def get_project_member_emails(project_id, force=False):
+    """Maps user_id -> email for a project's real (non-pending) members, cached briefly (force=True skips the cache)."""
     if not project_id:
         return {}
     now = time.time()
     hit = _MEMBER_EMAIL_CACHE.get(project_id)
-    if hit and now - hit[0] < _MEMBER_EMAIL_TTL:
+    if hit and not force and now - hit[0] < _MEMBER_EMAIL_TTL:
         return hit[1]
     mapping = {}
     for m in get_project_members(project_id):

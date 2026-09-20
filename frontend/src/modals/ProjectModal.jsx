@@ -39,7 +39,7 @@ export default function ProjectModal({
     if (!activeProject?.id) return;
     setLoadingMembers(true);
     try {
-      const res = await fetch(`${API_BASE}/projects/${activeProject.id}/members`);
+      const res = await fetch(`${API_BASE}/projects/${activeProject.id}/members`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (res.ok) {
         setMembers(await res.json());
       }

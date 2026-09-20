@@ -209,7 +209,7 @@ Do **not** add `SUPABASE_SERVICE_ROLE_KEY` or `META_ALLOW_TRAINING_TIER`.
 
 **What public mode does.** It switches off everything that is only safe on your own computer: capturing hook events, wiping data, changing the AI key, and raw logs. It ignores identities sent in a request body, verifies every login against Supabase's public keys, allows only your website through CORS, and limits each visitor to 20 questions per 10 minutes.
 
-**Known limits.** Anyone who knows a project's id can read its team notes (ids are random, but access isn't checked against membership yet). Render's free plan sleeps when idle, so wake it before a demo, and its disk resets on restart.
+**Known limits.** Render's free plan sleeps when idle, so wake it before a demo, and its disk resets on restart.
 
 ---
 
