@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Send, Lightbulb, ArrowRight, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Send, Lightbulb, ArrowRight, Loader2, ChevronDown, ChevronUp, Info } from 'lucide-react';
 import LessonRow from '../components/LessonRow';
 import TeamSession from '../components/TeamSession';
 import { API_BASE } from '../utils/api';
@@ -27,6 +27,17 @@ function splitAnswer(text) {
   return { main, analogy: analogy.trim(), tip: tip.trim() };
 }
 
+function CitedText({ text, sources, onCite }) {
+  const known = new Set(sources.map((s) => s.n));
+  return text.split(/(\[\d+\])/g).map((part, i) => {
+    const m = part.match(/^\[(\d+)\]$/);
+    if (m && known.has(Number(m[1]))) {
+      return <button key={i} type="button" className="cite" onClick={() => onCite(Number(m[1]))} aria-label={`Source ${m[1]}`}>{m[1]}</button>;
+    }
+    return m ? null : <span key={i}>{part}</span>;
+  });
+}
+
 export default function TeamBrain({
   lessons, statusOf, onStart, projectId, members = [], meId,
   sessions = [], sessionsReady = true, sessionsError = null, token, apiKeyConfigured = false, onGenerated = () => {},
@@ -37,6 +48,11 @@ export default function TeamBrain({
   const [failed, setFailed] = useState(false);
   const [openSource, setOpenSource] = useState(null);
   const [person, setPerson] = useState(null);
+  const [llm, setLlm] = useState(null);
+
+  // The AI spending limit, so people know when answers are paused instead of wondering why they got worse.
+  const refreshLlm = () => fetch(`${API_BASE}/llm/status`).then((r) => (r.ok ? r.json() : null)).then(setLlm).catch(() => setLlm(null));
+  useEffect(() => { refreshLlm(); }, []);
 
   // Everyone on the team, including people who haven't shared anything yet.
   const people = useMemo(() => {
@@ -54,9 +70,6 @@ export default function TeamBrain({
   const teamLessons = people.flatMap((p) => p.lessons).sort((a, b) => b.time - a.time);
   const latest = teamLessons.slice(0, 4);
   const activePerson = people.find((p) => p.key === person) || people[0];
-  const suggestions = people.some((p) => p.name === 'Sam')
-    ? SAM_QUESTIONS
-    : teamLessons.slice(0, 3).map((l) => `What does ${baseName(l.file)} do, and why?`);
   const openLesson = (l) => onStart([l.id], statusOf(l.id) === 'new' ? 'learn' : 'review');
 
   // Teammates' coding sessions, shared live from their machines.
@@ -64,6 +77,15 @@ export default function TeamBrain({
   const liveNow = teamSessions.slice(0, 4);
   const personSessions = activePerson ? teamSessions.filter((s) => s.user_id === activePerson.key) : [];
   const sessionProps = { projectId, token, canGenerate: Boolean(token) && apiKeyConfigured, onGenerated };
+
+  const recentFiles = [...new Set([...teamSessions.flatMap((s) => s.files), ...teamLessons.map((l) => l.file)]
+    .filter(Boolean).map(baseName))].slice(0, 2);
+  const suggestions = people.some((p) => p.name === 'Sam')
+    ? SAM_QUESTIONS
+    : [
+      ...people.slice(0, 2).map((p) => `What has ${p.name.split(' ')[0]} been working on?`),
+      ...recentFiles.map((f) => `What changed in ${f}, and why?`),
+    ];
 
   const ask = async (q) => {
     const text = (q ?? question).trim();
@@ -76,11 +98,12 @@ export default function TeamBrain({
     try {
       const res = await fetch(`${API_BASE}/ask-team`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ question: text, project_id: projectId }),
       });
       if (!res.ok) throw new Error('bad response');
       setResponse(await res.json());
+      refreshLlm();
     } catch {
       setFailed(true);
     } finally {
@@ -90,6 +113,10 @@ export default function TeamBrain({
 
   const answer = response ? splitAnswer(response.answer) : null;
   const lessonFor = (id) => lessons.find((l) => l.id === String(id));
+  const openCitation = (n) => {
+    setOpenSource(n);
+    setTimeout(() => document.getElementById(`source-${n}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+  };
 
   return (
     <div className="page">
@@ -112,6 +139,28 @@ export default function TeamBrain({
         </button>
       </form>
 
+      {llm?.limit_hit && (
+        <div className="notice notice-warn" role="alert">
+          <Info size={18} aria-hidden="true" />
+          <div>
+            <strong>Smart answers are paused.</strong>
+            <span>
+              The team&rsquo;s ${llm.cap_usd} AI budget is used up, so Team Brain is answering from your notes without the AI writing them.
+              {llm.alert_sent && (llm.email_configured ? ' The team has been emailed.' : ' No email was sent because no email account is set up yet (see the README).')}
+            </span>
+          </div>
+        </div>
+      )}
+      {llm && !llm.limit_hit && llm.percent >= 80 && (
+        <div className="notice" role="status">
+          <Info size={18} aria-hidden="true" />
+          <div><strong>The AI budget is {Math.round(llm.percent)}% used.</strong><span>${llm.spent_usd.toFixed(2)} of ${llm.cap_usd}. Smart answers pause automatically at the limit.</span></div>
+        </div>
+      )}
+      {llm && !llm.configured && (
+        <p className="muted small">Smart answers are off on this computer: {llm.reason} You&rsquo;ll get basic answers from your notes meanwhile.</p>
+      )}
+
       {suggestions.length > 0 && !response && (
         <div className="chips" aria-label="Question ideas">
           {suggestions.map((s) => (
@@ -128,7 +177,15 @@ export default function TeamBrain({
 
       {answer && (
         <section className="answer" aria-live="polite">
-          <p className="answer-main">{answer.main}</p>
+          {response.mode !== 'none' && (
+            <span className={`answer-badge ${response.mode === 'ai' ? 'ai' : ''}`}>
+              {response.mode === 'ai' ? 'Smart answer' : 'Basic answer'}{response.cached ? ' \u00b7 saved' : ''}
+            </span>
+          )}
+          {response.notice && (
+            <div className="notice notice-warn"><Info size={18} aria-hidden="true" /><div><span>{response.notice}</span></div></div>
+          )}
+          <p className="answer-main"><CitedText text={answer.main} sources={response.sources || []} onCite={openCitation} /></p>
           {answer.analogy && (
             <aside className="callout callout-warm"><strong>In simple terms</strong><span>{answer.analogy}</span></aside>
           )}
@@ -140,25 +197,28 @@ export default function TeamBrain({
             <div className="sources">
               <span className="eyebrow">Where this comes from</span>
               {response.sources.map((src) => {
-                const lesson = lessonFor(src.id);
-                const isOpen = openSource === src.id;
+                const lesson = src.kind === 'card' ? lessonFor(src.id) : null;
+                const live = src.kind !== 'card' ? sessions.find((x) => x.id === src.session_id && x.user_id === src.user_id) : null;
+                const isOpen = openSource === src.n;
+                const label = src.kind === 'card'
+                  ? (lesson ? lesson.title : src.title)
+                  : `${src.author}${src.when ? ` \u00b7 ${src.when}` : ''} \u00b7 ${src.file ? baseName(src.file) : src.title}`;
                 return (
-                  <div key={src.id} className="source">
-                    <button className="source-head" onClick={() => setOpenSource(isOpen ? null : src.id)} aria-expanded={isOpen}>
-                      <span>
-                        {lesson ? lesson.title : <>{src.author || 'A teammate'}’s note on <code>{baseName(src.file)}</code></>}
-                      </span>
+                  <div key={src.n} id={`source-${src.n}`} className="source">
+                    <button className="source-head" onClick={() => setOpenSource(isOpen ? null : src.n)} aria-expanded={isOpen}>
+                      <span><span className="source-n">{src.n}</span> {label}</span>
                       {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </button>
                     {isOpen && (
                       <div className="source-body">
-                        <p><strong>What they did:</strong> {src.decision}</p>
-                        <p><strong>Why:</strong> {src.why}</p>
+                        <p><strong>{src.kind === 'card' ? 'What they did:' : 'Goal:'}</strong> {src.decision}</p>
+                        {src.why && <p><strong>{src.kind === 'card' ? 'Why:' : 'Changes:'}</strong> {src.why}</p>}
                         {lesson && (
                           <button className="btn btn-soft" onClick={() => onStart([lesson.id], statusOf(lesson.id) === 'new' ? 'learn' : 'review')}>
                             Turn this into a lesson <ArrowRight size={16} />
                           </button>
                         )}
+                        {live && <TeamSession session={live} showAuthor={false} {...sessionProps} />}
                       </div>
                     )}
                   </div>
