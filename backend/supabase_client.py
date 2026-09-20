@@ -1,4 +1,6 @@
 import os
+import re
+import time
 import uuid
 import datetime
 import jwt
@@ -311,10 +313,14 @@ def accept_invite(token, user_id):
 
 IN_MEMORY_CUE_CARDS = []
 
-def save_cue_card_to_db(user_id, card_data, project_id=None):
-    """Saves a generated Cue Card to Supabase cue_cards table with optional project_id."""
+def save_cue_card(user_id, card_data, project_id=None):
+    """
+    Saves a card to Supabase. Returns {"shared": bool, "error": str|None}.
+    When Supabase rejects the write (for example a row-level-security policy) the card is kept in
+    this process's memory only, which no teammate can see, so callers must tell the user.
+    """
     if not user_id:
-        return None
+        return {"shared": False, "error": "not signed in"}
     data = {
         "id": str(card_data.get("id") or uuid.uuid4()),
         "user_id": user_id,
@@ -327,17 +333,24 @@ def save_cue_card_to_db(user_id, card_data, project_id=None):
         "quiz": card_data.get("quiz", {}),
         "created_at": datetime.datetime.now().isoformat()
     }
+    error = "Supabase is not connected"
     if supabase:
         try:
             res = supabase.table("cue_cards").insert(data).execute()
             if res.data:
-                return res.data
+                return {"shared": True, "error": None}
+            error = "Supabase accepted the request but stored nothing"
         except Exception as e:
+            error = str(e)
             print(f"[Supabase DB Note] Fallback to in-memory card store: {e}")
 
-    # Fallback store
     IN_MEMORY_CUE_CARDS.append(data)
-    return [data]
+    return {"shared": False, "error": error}
+
+def save_cue_card_to_db(user_id, card_data, project_id=None):
+    """Backwards-compatible wrapper around save_cue_card that returns the stored row."""
+    save_cue_card(user_id, card_data, project_id=project_id)
+    return [card_data]
 
 def get_user_cue_cards(user_id):
     """Fetches all Cue Cards for a specific user from Supabase + fallback."""
@@ -355,6 +368,35 @@ def get_user_cue_cards(user_id):
             cards.append(c)
     return cards
 
+def friendly_name(email):
+    """'dhweya.modi@outlook.com' -> 'Dhweya Modi'. Placeholder addresses become 'Teammate'."""
+    if not email or "@" not in str(email):
+        return "Teammate"
+    local, _, domain = str(email).partition("@")
+    if domain.endswith("team.internal") and local.startswith("user-"):
+        return "Teammate"
+    words = [re.sub(r"\d+$", "", w) for w in re.split(r"[._\-+]+", local) if w]
+    words = [w for w in words if w]
+    return " ".join(w.capitalize() for w in words) or "Teammate"
+
+_MEMBER_EMAIL_CACHE = {}
+_MEMBER_EMAIL_TTL = 30  # seconds; resolving members costs several queries and Team Brain polls
+
+def get_project_member_emails(project_id):
+    """Maps user_id -> email for a project's real (non-pending) members, cached briefly."""
+    if not project_id:
+        return {}
+    now = time.time()
+    hit = _MEMBER_EMAIL_CACHE.get(project_id)
+    if hit and now - hit[0] < _MEMBER_EMAIL_TTL:
+        return hit[1]
+    mapping = {}
+    for m in get_project_members(project_id):
+        if not m.get("is_pending") and m.get("user_id") and m.get("email"):
+            mapping[str(m["user_id"])] = m["email"]
+    _MEMBER_EMAIL_CACHE[project_id] = (now, mapping)
+    return mapping
+
 def get_project_cue_cards(project_id):
     """Fetches all Cue Cards scoped to a specific project from Supabase + fallback."""
     if not project_id:
@@ -371,9 +413,13 @@ def get_project_cue_cards(project_id):
         if c.get("project_id") == project_id and not any(existing.get("id") == c.get("id") for existing in cards):
             cards.append(c)
 
+    # Work out who wrote each card from the project's real member list, so teammates show up by name.
+    member_emails = get_project_member_emails(project_id)
     for c in cards:
-        uid = c.get("user_id")
-        c["author_email"] = USER_EMAIL_MAP.get(uid) or (f"dev-{uid[:6]}" if uid else "team")
+        uid = str(c.get("user_id") or "")
+        email = member_emails.get(uid) or USER_EMAIL_MAP.get(uid)
+        c["author_email"] = email or ""
+        c["author_name"] = friendly_name(email)
     return cards
 
 def save_pending_intent_db(user_id, session_id, intent_data):
@@ -406,3 +452,95 @@ def get_pending_intent_db(user_id, session_id):
     except Exception as e:
         print(f"[Supabase DB Error] Failed to fetch intent: {e}")
         return None
+
+
+# ==============================================================================
+# Live session sharing (see schema_sessions.sql)
+# Every function returns (result, error). `error` is a string when the database refused or the
+# tables aren't set up yet, so callers can explain it instead of failing silently.
+# ==============================================================================
+
+def upsert_project_session(header):
+    """Creates or updates the shared row for a session. Leaves `carded` untouched."""
+    if not supabase:
+        return False, "Supabase is not connected"
+    try:
+        supabase.table("project_sessions").upsert(header, on_conflict="id,user_id").execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def insert_session_events(rows):
+    if not rows:
+        return True, None
+    if not supabase:
+        return False, "Supabase is not connected"
+    try:
+        supabase.table("session_events").insert(rows).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def list_project_sessions(project_id, limit=30):
+    """Newest sessions across the whole team for a project."""
+    if not supabase or not project_id:
+        return [], "Supabase is not connected"
+    try:
+        res = (supabase.table("project_sessions").select("*").eq("project_id", project_id)
+               .order("last_activity", desc=True).limit(limit).execute())
+        return res.data or [], None
+    except Exception as e:
+        return [], str(e)
+
+
+def list_recent_session_events(project_id, limit=400):
+    """Recent events across a project, without the (large) diffs, newest first."""
+    if not supabase or not project_id:
+        return [], "Supabase is not connected"
+    try:
+        res = (supabase.table("session_events").select("session_id,user_id,at,kind,file,summary")
+               .eq("project_id", project_id).order("at", desc=True).limit(limit).execute())
+        return res.data or [], None
+    except Exception as e:
+        return [], str(e)
+
+
+def get_session_events(project_id, user_id, session_id, limit=300):
+    """One session's edits including diffs, oldest first. Used to make lessons from it."""
+    if not supabase:
+        return [], "Supabase is not connected"
+    try:
+        res = (supabase.table("session_events").select("*").eq("project_id", project_id)
+               .eq("user_id", user_id).eq("session_id", session_id).order("at", desc=False)
+               .limit(limit).execute())
+        return res.data or [], None
+    except Exception as e:
+        return [], str(e)
+
+
+def get_session_carded(project_id, user_id, session_id):
+    """Digests of changes that already have lessons, so the same work is never paid for twice."""
+    if not supabase:
+        return []
+    try:
+        res = (supabase.table("project_sessions").select("carded").eq("project_id", project_id)
+               .eq("user_id", user_id).eq("id", session_id).execute())
+        rows = res.data or []
+        return list(rows[0].get("carded") or []) if rows else []
+    except Exception:
+        return []
+
+
+def add_session_carded(project_id, user_id, session_id, digests):
+    if not supabase or not digests:
+        return False
+    try:
+        merged = sorted(set(get_session_carded(project_id, user_id, session_id)) | set(digests))
+        supabase.table("project_sessions").update({"carded": merged}).eq("project_id", project_id) \
+            .eq("user_id", user_id).eq("id", session_id).execute()
+        return True
+    except Exception as e:
+        print(f"[Supabase DB Note] add_session_carded failed: {e}")
+        return False

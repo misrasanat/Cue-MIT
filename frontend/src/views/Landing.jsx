@@ -35,6 +35,11 @@ const STEPS = [
     command: 'cue-setup',
   },
   {
+    title: 'Share with your team',
+    text: 'Optional. In a project folder, run this and pick your team\u2019s project. Only linked folders are shared, and secrets are masked.',
+    command: 'cue link',
+  },
+  {
     title: 'Build like normal',
     text: 'That’s it. Cue logs sessions quietly in the background. When you’re ready, open Cue and tap Make lessons.',
   },

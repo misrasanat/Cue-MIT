@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cue-companion"
-version = "0.1.5"
+version = "0.1.6"
 description = "Ambient Comprehension Companion & AI Cue Card Generator for Gemini CLI and Antigravity CLI"
 readme = "README.md"
 authors = [{ name = "Cue Team" }]
