@@ -13,6 +13,7 @@ Key Responsibilities:
 """
 
 import functools
+import random
 import time
 import os
 import re
@@ -60,8 +61,8 @@ from supabase_client import (
 import supabase_client
 from project_link import find_link
 from share_sync import ShareSync, prepare_event
-from llm import MetaClient
-from budget import BudgetGuard, SharedLedger
+from llm import MetaClient, LLMError, LLMNotConfigured
+from budget import BudgetGuard, BudgetExceeded, SharedLedger
 from team_qa import TeamQA
 import public_mode
 from seed_data import SAM_CUE_CARDS
@@ -148,29 +149,29 @@ EDIT_TOOLS = {
 COMMAND_TOOLS = {"run_command"}
 telemetry_logs = []  # rolling buffer of last 50 raw hook events for the debug stream
 
-CARD_SYSTEM_INSTRUCTION = """You are a warm, encouraging senior engineering mentor explaining AI code changes to an engineering intern.
-Your goal is to bridge "comprehension lag" and teach them the architectural intuition behind the code diff and stated intent.
+CARD_SYSTEM_INSTRUCTION = """You are a warm, encouraging senior engineering mentor. A teammate's AI coding agent just changed a file, and you are writing a short lesson so another developer on the team can understand WHAT changed and WHY, well enough to explain it in standup.
 
-Avoid dry academic jargon. Explain concepts using intuitive mental models, practical engineering trade-offs, and plain language that helps an intern learn and confidently explain the code during standup.
+Write about THIS change, not about programming in general:
+- Name the real functions, variables, files or values that appear in the diff. Quote them in backticks.
+- Use the stated intent to explain the goal, and the diff to explain how it was reached.
+- Never write generic advice such as "keep modules small" or "separate concerns" unless the diff is literally about that.
+- Plain language, no buzzwords. One short analogy is welcome when it truly helps, but never force one.
+- "alternatives" are realistic other ways to do THIS specific thing, each with honest pros and cons. Two is enough.
+- The quiz asks about the specific reasoning in this change, with 3 options. Wrong options must be plausible, not silly.
 
-If the change is trivial (e.g., formatting, fixing a typo, updating single comment), return:
-{"skip": true}
+If the change is trivial (formatting, a typo, one comment, renaming with no behaviour change), return exactly: {"skip": true}
 
-Otherwise, generate a JSON object matching this schema:
+Otherwise return ONLY a JSON object (no markdown fences, no commentary) with this shape:
 {
-  "decision": "One clear sentence explaining the architectural choice made in plain, accessible terms (no buzzword salad)",
-  "why": "Friendly explanation of why this was done. Use a short analogy or intuitive comparison (e.g., 'Think of this like...') to make the concept stick.",
-  "mentor_tip": "One punchy, practical piece of advice or key concept an intern should remember about this pattern",
+  "decision": "One clear sentence saying what was changed and the choice behind it",
+  "why": "2-4 sentences: the problem this solves and how the change solves it, using names from the diff",
+  "mentor_tip": "One practical takeaway someone should remember from this specific change",
   "alternatives": [
-    {
-      "option": "Alternative approach (with brief 3-5 word plain English descriptor)",
-      "pros": ["Clear advantage in plain language", "Another benefit"],
-      "cons": ["Practical downside or risk", "Another downside"]
-    }
+    {"option": "A different way to do it (3-6 words)", "pros": ["..."], "cons": ["..."]}
   ],
-  "category": "architecture | data-structure | api-design | security | performance",
+  "category": "architecture | data-structure | api-design | security | performance | testing | ui | bugfix",
   "quiz": {
-    "question": "An intuitive comprehension question checking if the intern understands the main tradeoff or concept (avoid trick questions)",
+    "question": "A comprehension question about the reasoning in this change",
     "options": ["Option A", "Option B", "Option C"],
     "correct_index": 0
   }
@@ -376,45 +377,74 @@ def _fallback_card(file_path, intent_text, timestamp):
     }
 
 
-def build_card(file_path, intent_text, diff, timestamp):
-    """One model call for one file. Returns a card dict, or None if the model judged it trivial."""
-    if not client:
+class CardFailed(Exception):
+    """The model could not write a lesson for this file. Nothing is saved, so the file is tried again next time."""
+
+
+CARD_MAX_TOKENS = 2000  # thinking tokens count against this, so leave room for the lesson itself
+
+
+def _parse_card(text):
+    """Pulls the lesson JSON out of a reply, tolerating markdown fences or stray words around it."""
+    text = (text or "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise CardFailed("the reply had no lesson in it")
+    try:
+        card = json.loads(text[start:end + 1])
+    except ValueError as e:
+        raise CardFailed(f"the reply wasn't valid JSON ({e})")
+    if not isinstance(card, dict):
+        raise CardFailed("the reply wasn't a lesson")
+    if card.get("skip"):
+        return card
+    quiz = card.get("quiz") if isinstance(card.get("quiz"), dict) else {}
+    options = [str(o) for o in (quiz.get("options") or []) if str(o).strip()]
+    if not str(card.get("decision") or "").strip() or not str(card.get("why") or "").strip() or len(options) < 2:
+        raise CardFailed("the lesson was missing its decision, explanation or quiz")
+    try:
+        correct = options[int(quiz.get("correct_index", 0))]
+    except (ValueError, TypeError, IndexError):
+        correct = options[0]
+    random.shuffle(options)  # models love putting the right answer first
+    card["quiz"] = {"question": str(quiz.get("question") or "What was the reason for this change?"),
+                    "options": options, "correct_index": options.index(correct)}
+    alts = card.get("alternatives")
+    card["alternatives"] = [a for a in alts if isinstance(a, dict) and a.get("option")] if isinstance(alts, list) else []
+    return card
+
+
+def build_card(file_path, intent_text, diff, timestamp, owner_id=None):
+    """
+    One model call for one file. Returns a card dict, or None if the model judged it trivial.
+    Raises CardFailed / BudgetExceeded / an LLM error when no real lesson could be written; a made-up
+    placeholder is only ever returned when no AI is configured at all.
+    """
+    if not llm_client.configured:
         return _fallback_card(file_path, intent_text, timestamp)
 
-    prompt = f"""
-File touched: {file_path}
-Stated Intent: {json.dumps({"summary": intent_text})}
-Diff / Changes:
+    prompt = f"""File touched: {file_path}
+Stated intent of the session: {intent_text}
+
+Changes (lines starting with + were added, - were removed):
 {diff}
 """
-    try:
-        from google.genai import types
-        model_name = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=CARD_SYSTEM_INSTRUCTION,
-                response_mime_type="application/json",
-                max_output_tokens=1200,
-            ),
-        )
-        card = json.loads(response.text)
-        if card.get("skip"):
-            return None
-        card.update(id=str(uuid.uuid4()), file=file_path, timestamp=timestamp,
-                    generator="real-gemini-ai")
-        return card
-    except Exception as e:
-        print(f"[Generate] Gemini failed for {file_path} ({e}); using fallback card.")
-        return _fallback_card(file_path, intent_text, timestamp)
+    messages = [{"role": "system", "content": CARD_SYSTEM_INSTRUCTION}, {"role": "user", "content": prompt}]
+    budget_guard.authorize(llm_client.estimate_cost(messages, CARD_MAX_TOKENS))
+    result = llm_client.chat(messages, max_tokens=CARD_MAX_TOKENS, reasoning_effort="minimal")
+    budget_guard.record("card", result, owner_id)
+    card = _parse_card(result.text)
+    if card.get("skip"):
+        return None
+    card.update(id=str(uuid.uuid4()), file=file_path, timestamp=timestamp, generator="meta-ai")
+    return card
 
 
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
         "status": "ok",
-        "api_key_configured": bool(api_key),
+        "api_key_configured": bool(api_key) or llm_client.configured,
         "public": PUBLIC,
         **({} if PUBLIC else {"hook_installed": hook_success, "hook_info": hook_info, "card_count": len(cards)}),
     })
@@ -438,10 +468,10 @@ def config():
 
     # GET method
     if PUBLIC:
-        return jsonify({"api_key_configured": bool(api_key), "hook_installed": False})
+        return jsonify({"api_key_configured": bool(api_key) or llm_client.configured, "hook_installed": False})
     masked = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else ("Configured" if api_key else "Not Set")
     return jsonify({
-        "api_key_configured": bool(api_key),
+        "api_key_configured": bool(api_key) or llm_client.configured,
         "hook_installed": hook_success,
         "hook_info": hook_info,
         "masked_key": masked
@@ -530,6 +560,7 @@ def _make_cards(by_file, already, mocked, project_id, owner_id, allow_mock=True,
     """
     created, skipped, done_before, deferred = [], 0, 0, 0
     shared, share_error = 0, None  # how many cards actually reached the shared database
+    failed, stop_reason = 0, None
     newly_carded, newly_mocked = [], []
     for file_path, group in by_file.items():
         diff = "\n...\n".join(e["diff"] for e in group if e["diff"])[:MAX_DIFF_CHARS]
@@ -537,7 +568,7 @@ def _make_cards(by_file, already, mocked, project_id, owner_id, allow_mock=True,
         intent_text = "; ".join(intents) or "Direct file edit"
         digest = hashlib.sha1(f"{file_path}\n{diff}\n{intent_text}".encode("utf-8")).hexdigest()
 
-        if digest in already or (not client and digest in mocked):
+        if digest in already or (not llm_client.configured and digest in mocked):
             done_before += 1
             continue
         if _is_trivial(file_path, diff):
@@ -547,7 +578,18 @@ def _make_cards(by_file, already, mocked, project_id, owner_id, allow_mock=True,
             deferred += 1
             continue
 
-        card = build_card(file_path, intent_text, diff, group[-1]["ts"])
+        try:
+            card = build_card(file_path, intent_text, diff, group[-1]["ts"], owner_id)
+        except BudgetExceeded as e:
+            stop_reason = e.message
+            break
+        except LLMNotConfigured as e:
+            stop_reason = str(e)
+            break
+        except (LLMError, CardFailed) as e:
+            failed += 1
+            print(f"[Generate] No lesson for {file_path}: {e}", flush=True)
+            continue
         if card is not None and card.get("generator") == "fallback-mock":
             if not allow_mock:
                 skipped += 1  # placeholder cards must never enter the team's knowledge
@@ -572,7 +614,7 @@ def _make_cards(by_file, already, mocked, project_id, owner_id, allow_mock=True,
 
     return {
         "created": created, "skipped": skipped, "done_before": done_before, "deferred": deferred,
-        "shared": shared, "share_error": share_error,
+        "shared": shared, "share_error": share_error, "failed": failed, "stop_reason": stop_reason,
         "newly_carded": newly_carded, "newly_mocked": newly_mocked,
     }
 
@@ -584,6 +626,8 @@ def _generate_response(result, has_owner):
         "skipped_trivial": result["skipped"],
         "already_generated": result["done_before"],
         "deferred": result["deferred"],  # click again to process the rest
+        "failed": result["failed"],  # the AI couldn't write these; nothing was saved, so trying again is safe
+        "message": result["stop_reason"],
         "cards": result["created"],
         # `shared` is how many lessons reached the team database; a signed-in user expects all of them.
         "shared": result["shared"],
@@ -687,9 +731,9 @@ def api_generate_shared_session(project_id, owner_id, session_id):
         return jsonify({"error": "Sign in to make lessons from your team's sessions."}), 401
     if viewer_id not in get_project_member_emails(project_id):
         return jsonify({"error": "Only members of this project can do that."}), 403
-    if not client:
+    if not llm_client.configured:
         return jsonify({"error": "needs_ai_key",
-                        "message": "Making lessons from a teammate's session needs an AI key. Add one in Settings."}), 400
+                        "message": "Making lessons from a teammate's session needs an AI key. Add META_API_KEY to backend/.env."}), 400
 
     events, err = get_session_events(project_id, owner_id, session_id)
     if err:
