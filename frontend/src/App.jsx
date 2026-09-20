@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Home as HomeIcon, GraduationCap, Users, Settings as SettingsIcon, Building2, Users as UsersIcon, ChevronDown } from 'lucide-react';
 import { supabase } from './supabase';
-import { API_BASE } from './utils/api';
+import { API_BASE, LOCAL_API_BASE } from './utils/api';
 import { buildLessons } from './utils/cards';
 import { useProgress } from './utils/progress';
 import Landing from './views/Landing';
@@ -128,12 +128,12 @@ export default function App() {
       const url = activeProject?.id
         ? `${API_BASE}/team-cards?project_id=${activeProject.id}`
         : `${API_BASE}/team-cards`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (res.ok) setTeamCards(await res.json());
     } catch {
       // Offline is already surfaced by the cards poll.
     }
-  }, [activeProject?.id]);
+  }, [activeProject?.id, token]);
 
   const fetchMembers = useCallback(async () => {
     if (!activeProject?.id) {
@@ -141,12 +141,12 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/projects/${activeProject.id}/members`);
+      const res = await fetch(`${API_BASE}/projects/${activeProject.id}/members`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (res.ok) setMembers(await res.json());
     } catch {
       // Offline is already surfaced by the cards poll.
     }
-  }, [activeProject?.id]);
+  }, [activeProject?.id, token]);
 
   const fetchTeamSessions = useCallback(async () => {
     if (!activeProject?.id) {
@@ -154,16 +154,16 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/projects/${activeProject.id}/sessions`);
+      const res = await fetch(`${API_BASE}/projects/${activeProject.id}/sessions`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (res.ok) setTeamSessions(await res.json());
     } catch {
       // Offline is already surfaced by the cards poll.
     }
-  }, [activeProject?.id]);
+  }, [activeProject?.id, token]);
 
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/sessions`);
+      const res = await fetch(`${LOCAL_API_BASE}/sessions`);
       if (res.ok) setSessions(await res.json());
     } catch {
       // Same as above.
@@ -175,13 +175,13 @@ export default function App() {
       // Re-send a locally saved key in case the backend restarted since it was entered.
       const stored = localStorage.getItem('cue_gemini_api_key');
       if (stored) {
-        await fetch(`${API_BASE}/config`, {
+        await fetch(`${LOCAL_API_BASE}/config`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ api_key: stored }),
         });
       }
-      const res = await fetch(`${API_BASE}/config`);
+      const res = await fetch(`${LOCAL_API_BASE}/config`);
       if (res.ok) setApiKeyConfigured((await res.json()).api_key_configured);
     } catch {
       // Backend offline.
@@ -223,7 +223,7 @@ export default function App() {
 
   const startOver = async () => {
     try {
-      await fetch(`${API_BASE}/reset`, { method: 'POST' });
+      await fetch(`${LOCAL_API_BASE}/reset`, { method: 'POST' });
     } catch {
       // Local progress still gets cleared below.
     }
@@ -234,7 +234,7 @@ export default function App() {
 
   // Sends a small made-up edit through the real capture pipeline so a new user can try Cue without a terminal.
   const simulateSession = async () => {
-    const post = (body) => fetch(`${API_BASE}/capture`, {
+    const post = (body) => fetch(`${LOCAL_API_BASE}/capture`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

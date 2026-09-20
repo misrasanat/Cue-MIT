@@ -90,6 +90,31 @@ def local_only(view):
     return wrapper
 
 
+def require_member(project_id):
+    """
+    On a public server only members of a project may read or change it. Returns an error response to send back,
+    or None when the request may go ahead. On your own computer nothing is enforced.
+    """
+    if not PUBLIC or not project_id:
+        return None
+    viewer = get_user_id_from_token(request.headers.get("Authorization"))
+    if not viewer:
+        return jsonify({"error": "Please sign in."}), 401
+    if viewer not in get_project_member_emails(project_id):
+        # Someone who has only just joined may not be in the short-lived cache yet, so look once more before refusing.
+        if viewer not in get_project_member_emails(project_id, force=True):
+            return jsonify({"error": "You aren't a member of this project."}), 403
+    return None
+
+
+@app.after_request
+def allow_private_network(response):
+    """Chrome asks permission before a public website (like your Netlify site) may reach a service on your own computer."""
+    if not PUBLIC and request.headers.get("Access-Control-Request-Private-Network"):
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
+
+
 def trusted(value):
     """Identity details sent in a request body or query are only believed on your own computer."""
     return None if PUBLIC else value
@@ -622,6 +647,9 @@ def share_status():
 @app.route("/projects/<project_id>/sessions", methods=["GET"])
 def api_project_sessions(project_id):
     """Recent coding sessions from everyone on the project, newest first. Diffs are left out to keep it light."""
+    denied = require_member(project_id)
+    if denied:
+        return denied
     rows, err = list_project_sessions(project_id)
     if err:
         return jsonify({"sessions": [], "ready": False, "error": _share_hint(err)})
@@ -679,6 +707,9 @@ def api_generate_shared_session(project_id, owner_id, session_id):
 @app.route("/cards", methods=["GET"])
 def get_cards():
     project_id = request.args.get("project_id")
+    denied = require_member(project_id)
+    if denied:
+        return denied
     if project_id:
         db_cards = get_project_cue_cards(project_id)
         if db_cards:
@@ -770,6 +801,11 @@ def api_create_project(org_id):
     if not user_id:
         return jsonify({"error": "Unauthorized. Please log in first."}), 401
 
+    if PUBLIC:
+        org = get_organization(org_id)
+        if not org or str(org.get("created_by")) != str(user_id):
+            return jsonify({"error": "Only the person who created an organization can add projects to it."}), 403
+
     project = create_project(org_id, name, user_id)
     if not project:
         return jsonify({"error": "Failed to create project"}), 500
@@ -778,6 +814,9 @@ def api_create_project(org_id):
 
 @app.route("/projects/<project_id>/invite", methods=["POST"])
 def api_create_project_invite(project_id):
+    denied = require_member(project_id)
+    if denied:
+        return denied
     data = request.get_json(silent=True) or {}
     email = (data.get("email") or "").strip().lower()
     if not email:
@@ -848,6 +887,9 @@ def api_get_user_projects():
 
 @app.route("/projects/<project_id>/members", methods=["GET"])
 def api_get_project_members(project_id):
+    denied = require_member(project_id)
+    if denied:
+        return denied
     members = get_project_members(project_id)
     return jsonify(members), 200
 
@@ -1009,6 +1051,9 @@ def retrieve_relevant_cards(question: str, candidate_cards: list, max_results: i
 def get_team_cards():
     """Returns the collective pool of cards across all teammates (scoped to project_id)."""
     project_id = request.args.get("project_id")
+    denied = require_member(project_id)
+    if denied:
+        return denied
     return jsonify(get_all_collective_cards(project_id=project_id))
 
 class TeamSource:
@@ -1049,6 +1094,9 @@ def ask_team():
     if not question:
         return jsonify({"error": "Missing question in request body"}), 400
 
+    denied = require_member(project_id)
+    if denied:
+        return denied
     if PUBLIC and not ask_limiter.allow(request.remote_addr or "unknown"):
         # Every answer can cost money, so one visitor can't ask endlessly. Same shape as a normal reply.
         return jsonify({"answer": "You're asking questions very quickly. Please wait a few minutes and try again.",
