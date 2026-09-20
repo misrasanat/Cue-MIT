@@ -175,6 +175,44 @@ SMTP_PASSWORD=your-16-character-app-password
 
 ---
 
+## Deploying: Netlify (website) + Render (backend)
+
+Cue has two halves. The **website** is static and lives on Netlify. The **backend** is a Flask server; on Render it powers the dashboard, teams and Team Brain. Capturing coding sessions always happens on each developer's own computer (the hooks read local files), so that part is never hosted.
+
+**1. Backend on Render**: *New > Web Service* (or *New > Blueprint*, which reads [`render.yaml`](render.yaml)):
+
+| Setting | Value |
+|---|---|
+| Root Directory | `backend` |
+| Build Command | `pip install -r requirements.txt` |
+| Start Command | `gunicorn server:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120` |
+| Health Check Path | `/health` |
+
+Use **one worker**: the spending limit and search index live in memory. Set these environment variables in Render's dashboard (never in git):
+
+| Variable | Value |
+|---|---|
+| `CUE_PUBLIC_MODE` | `1` (also automatic on Render) |
+| `PUBLIC_APP_URL` | your Netlify address, used for invite links |
+| `ALLOWED_ORIGINS` | your Netlify address, the only website allowed to call the server |
+| `META_API_KEY` | your Meta key (secret) |
+| `LLM_BUDGET_USD`, `LLM_DAILY_USD` | `25`, `5` |
+| `BUDGET_ALERT_EMAILS` | who to email at the limit |
+| `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` | optional: send that email (Gmail app password) |
+| `GEMINI_API_KEY` | optional: lets anyone turn a teammate's session into lessons |
+
+Do **not** add `SUPABASE_SERVICE_ROLE_KEY` or `META_ALLOW_TRAINING_TIER`.
+
+**2. Website on Netlify**: base directory `frontend`, build `npm run build`, publish `dist` (these are also in [`netlify.toml`](netlify.toml)). Add one environment variable, `VITE_API_BASE`, set to your Render address (for example `https://cue-backend.onrender.com`), then redeploy, because it is baked in at build time.
+
+**3. Supabase**: under *Authentication > URL Configuration*, set the Site URL to your Netlify address and add it to the redirect URLs, so sign-up emails don't link to localhost. Also run `backend/schema_llm.sql` so the AI spending limit survives Render restarts.
+
+**What public mode does.** It switches off everything that is only safe on your own computer: capturing hook events, wiping data, changing the AI key, and raw logs. It ignores identities sent in a request body, verifies every login against Supabase's public keys, allows only your website through CORS, and limits each visitor to 20 questions per 10 minutes.
+
+**Known limits.** Anyone who knows a project's id can read its team notes (ids are random, but access isn't checked against membership yet). Render's free plan sleeps when idle, so wake it before a demo, and its disk resets on restart.
+
+---
+
 ## Troubleshooting & Common Mistakes
 
 | What happened | Why it happened | The Fix |

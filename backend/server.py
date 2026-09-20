@@ -12,6 +12,7 @@ Key Responsibilities:
 - Exposes REST APIs for client configuration, card retrieval, standup summary generation, and debugging.
 """
 
+import functools
 import os
 import re
 import uuid
@@ -61,16 +62,41 @@ from share_sync import ShareSync, prepare_event
 from llm import MetaClient
 from budget import BudgetGuard, SharedLedger
 from team_qa import TeamQA
+import public_mode
 from seed_data import SAM_CUE_CARDS
 
 # Load environment variables from .env if present
 load_dotenv(override=True)
 
-app = Flask(__name__)
-CORS(app)  # Enables cross-origin requests from the web app frontend
+# True on a public server (Render). It switches off every route that is only safe on your own computer.
+PUBLIC = public_mode.is_public()
 
-# Auto-register global Gemini CLI hook in ~/.gemini/settings.json
-hook_success, hook_info = install_global_hook()
+app = Flask(__name__)
+CORS(app, origins=public_mode.cors_origins())  # Enables cross-origin requests from the web app frontend
+if PUBLIC:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)  # behind Render's proxy: use the visitor's real address for rate limits
+
+ask_limiter = public_mode.RateLimiter(limit=int(os.environ.get("ASK_RATE_LIMIT", "20")), window=600)
+
+
+def local_only(view):
+    """Routes that are only safe on your own computer: refused on a public server."""
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if PUBLIC:
+            return jsonify({"error": "This isn't available on the public server."}), 403
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def trusted(value):
+    """Identity details sent in a request body or query are only believed on your own computer."""
+    return None if PUBLIC else value
+
+
+# Auto-register global Gemini CLI hook in ~/.gemini/settings.json (a public server has no CLI to hook)
+hook_success, hook_info = (False, "disabled on the public server") if PUBLIC else install_global_hook()
 
 api_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
@@ -363,15 +389,16 @@ def health():
     return jsonify({
         "status": "ok",
         "api_key_configured": bool(api_key),
-        "hook_installed": hook_success,
-        "hook_info": hook_info,
-        "card_count": len(cards)
+        "public": PUBLIC,
+        **({} if PUBLIC else {"hook_installed": hook_success, "hook_info": hook_info, "card_count": len(cards)}),
     })
 
 @app.route("/config", methods=["GET", "POST"])
 def config():
     global api_key, client
     if request.method == "POST":
+        if PUBLIC:  # anyone on the internet could otherwise replace the AI key
+            return jsonify({"error": "This isn't available on the public server."}), 403
         data = request.get_json(silent=True) or {}
         new_key = data.get("api_key", "").strip()
         if new_key:
@@ -384,6 +411,8 @@ def config():
             return jsonify({"status": "cleared", "api_key_configured": False, "hook_installed": hook_success})
 
     # GET method
+    if PUBLIC:
+        return jsonify({"api_key_configured": bool(api_key), "hook_installed": False})
     masked = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else ("Configured" if api_key else "Not Set")
     return jsonify({
         "api_key_configured": bool(api_key),
@@ -393,6 +422,7 @@ def config():
     })
 
 @app.route("/capture", methods=["POST"])
+@local_only
 def capture():
     event = request.get_json(silent=True)
     if not event:
@@ -711,7 +741,7 @@ def api_create_organization():
     auth_header = request.headers.get("Authorization")
     user_id, _ = get_user_info_from_token(auth_header)
     if not user_id:
-        user_id = data.get("user_id")
+        user_id = trusted(data.get("user_id"))
 
     if not user_id:
         return jsonify({"error": "Unauthorized. Please log in first."}), 401
@@ -732,8 +762,8 @@ def api_create_project(org_id):
     auth_header = request.headers.get("Authorization")
     user_id, token_email = get_user_info_from_token(auth_header)
     if not user_id:
-        user_id = data.get("user_id")
-    creator_email = token_email or data.get("email") or data.get("user_email")
+        user_id = trusted(data.get("user_id"))
+    creator_email = token_email or trusted(data.get("email") or data.get("user_email"))
     if user_id and creator_email:
         register_user_email(user_id, creator_email)
 
@@ -756,8 +786,8 @@ def api_create_project_invite(project_id):
     auth_header = request.headers.get("Authorization")
     user_id, token_email = get_user_info_from_token(auth_header)
     if not user_id:
-        user_id = data.get("user_id")
-    inviter_email = token_email or data.get("inviter_email")
+        user_id = trusted(data.get("user_id"))
+    inviter_email = token_email or trusted(data.get("inviter_email"))
     if user_id and inviter_email:
         register_user_email(user_id, inviter_email)
 
@@ -769,7 +799,7 @@ def api_create_project_invite(project_id):
         return jsonify({"error": "Failed to create invite"}), 500
 
     token = invite["id"]
-    invite_url = f"http://localhost:5173/join?token={token}"
+    invite_url = f"{public_mode.public_app_url()}/join?token={token}"
     print(f"[Email Service Mock] Sending invite email to '{email}' for project '{project_id}'. Link: {invite_url}")
 
     return jsonify({
@@ -785,8 +815,8 @@ def api_accept_invite(token):
     user_id, token_email = get_user_info_from_token(auth_header)
     data = request.get_json(silent=True) or {}
     if not user_id:
-        user_id = data.get("user_id")
-    acceptor_email = token_email or data.get("email")
+        user_id = trusted(data.get("user_id"))
+    acceptor_email = token_email or trusted(data.get("email"))
     if user_id and acceptor_email:
         register_user_email(user_id, acceptor_email)
 
@@ -804,8 +834,8 @@ def api_get_user_projects():
     auth_header = request.headers.get("Authorization")
     user_id, token_email = get_user_info_from_token(auth_header)
     if not user_id:
-        user_id = request.args.get("user_id")
-    req_email = token_email or request.args.get("email")
+        user_id = trusted(request.args.get("user_id"))
+    req_email = token_email or trusted(request.args.get("email"))
     if user_id and req_email:
         register_user_email(user_id, req_email)
 
@@ -834,6 +864,7 @@ def api_get_invite_details(token):
     }), 200
 
 @app.route("/reset", methods=["POST"])
+@local_only
 def reset():
     cards.clear()
     with sessions_lock:
@@ -843,6 +874,7 @@ def reset():
     return jsonify({"status": "cleared"})
 
 @app.route("/logs", methods=["GET"])
+@local_only
 def get_logs():
     """Returns the rolling buffer of raw hook events for the live debug stream."""
     return jsonify(telemetry_logs)
@@ -1017,6 +1049,12 @@ def ask_team():
     if not question:
         return jsonify({"error": "Missing question in request body"}), 400
 
+    if PUBLIC and not ask_limiter.allow(request.remote_addr or "unknown"):
+        # Every answer can cost money, so one visitor can't ask endlessly. Same shape as a normal reply.
+        return jsonify({"answer": "You're asking questions very quickly. Please wait a few minutes and try again.",
+                        "mode": "none", "cached": False, "notice": "", "sources": [], "grounded": True,
+                        "intent": "", "people": [], "query": question})
+
     asker_id = get_user_id_from_token(request.headers.get("Authorization")) or ""
     return jsonify(team_qa.answer(question, TeamSource(project_id), project_id or "demo", asker_id))
 
@@ -1040,4 +1078,4 @@ if __name__ == "__main__":
     # transcripts, otherwise every AGY event would be captured twice.
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         TranscriptWatcher(f"http://127.0.0.1:{port}").start_background()
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=not PUBLIC)
