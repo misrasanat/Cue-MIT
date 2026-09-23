@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Users, Layers, WifiOff, Sparkles } from 'lucide-react';
+import { ArrowRight, BookOpen, Users, Layers, WifiOff } from 'lucide-react';
 import ProgressRing from '../components/ProgressRing';
 import HeroArt from '../components/HeroArt';
 
@@ -80,7 +80,7 @@ export default function Home({
     <div className="page">
       <header className="page-head">
         <h1 className="greeting">{greeting(name)}</h1>
-        <p className="muted">Here’s where you are today.</p>
+        <p className="muted">Turn today’s coding into lessons you’ll actually remember.</p>
       </header>
 
       {!online && (
@@ -137,16 +137,6 @@ export default function Home({
           <button className="btn btn-soft" onClick={() => onNavigate('team')}><Users size={16} /> Open Team Brain</button>
         </section>
       </div>
-
-      {!apiKeyConfigured && (
-        <div className="notice">
-          <Sparkles size={18} aria-hidden="true" />
-          <div>
-            <strong>You’re seeing sample explanations.</strong>
-            <span>Add META_API_KEY to backend/.env and restart Cue to get lessons written specifically about your code. <button className="link-btn" onClick={onOpenSettings}>Open settings</button></span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
