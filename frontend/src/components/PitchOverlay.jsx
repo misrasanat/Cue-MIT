@@ -24,18 +24,22 @@ const COPY = {
     sub: 'A real lesson, then a real Team Brain question.',
     button: 'Exit to Dashboard',
   },
+  intro: {
+    badge: 'INTRODUCING',
+    tagline: 'Understanding each other better.',
+  },
   close: {
-    tagline: 'Understanding each other, faster.',
+    tagline: 'Understanding each other better.',
   },
   nextLabel: 'Next',
   backLabel: 'Back',
   skipLabel: 'Skip to dashboard',
 };
 
-// Panels run in order; the last one (index 4) is the closing slide.
-const LAST_LINEAR = 4;
-const TOTAL = 5;
-const IDEA_PANEL = 2; // the slide whose caption appears on the first Next
+// Panels run in order; the last one (index 5) is the closing slide.
+const LAST_LINEAR = 5;
+const TOTAL = 6;
+const IDEA_PANEL = 3; // the slide whose caption appears on the first Next
 // ---------------------------------------------------------------------------------------------
 
 function Logo({ large }) {
@@ -133,6 +137,14 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
       </section>
 
       <section className={cls(1)} aria-hidden={index !== 1}>
+        <span className="eyebrow" style={{ letterSpacing: '0.14em', fontWeight: 600 }}>{COPY.intro.badge}</span>
+        <Logo large />
+        <p className="pitch-sub" style={{ fontSize: 'clamp(24px, 3vw, 36px)', color: 'var(--ink)', fontWeight: 500 }}>
+          "{COPY.intro.tagline}"
+        </p>
+      </section>
+
+      <section className={cls(2)} aria-hidden={index !== 2}>
         <h2 className="pitch-title">{COPY.whatTitle}</h2>
         <ul className="pitch-icons">
           {COPY.what.map(({ key, Icon, label, note }) => (
@@ -145,7 +157,7 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
         </ul>
       </section>
 
-      <section className={cls(2)} aria-hidden={index !== 2}>
+      <section className={cls(3)} aria-hidden={index !== 3}>
         <Diagram />
         <div className={`pitch-reveal ${revealed ? 'is-shown' : ''}`} aria-hidden={!revealed}>
           <p className="pitch-caption gradient-text">{COPY.idea.caption}</p>
@@ -153,17 +165,19 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
         </div>
       </section>
 
-      <section className={cls(3)} aria-hidden={index !== 3}>
+      <section className={cls(4)} aria-hidden={index !== 4}>
         <h1 className="pitch-hook">{COPY.live.title}</h1>
         <p className="pitch-sub">{COPY.live.sub}</p>
-        <button className="btn btn-primary btn-lg pitch-exit" onClick={onExit} tabIndex={index === 3 ? 0 : -1}>
+        <button className="btn btn-primary btn-lg pitch-exit" onClick={onExit} tabIndex={index === 4 ? 0 : -1}>
           {COPY.live.button} <ArrowRight size={18} aria-hidden="true" />
         </button>
       </section>
 
-      <section className={cls(4)} aria-hidden={index !== 4}>
+      <section className={cls(5)} aria-hidden={index !== 5}>
         <Logo large />
-        <p className="pitch-sub">{COPY.close.tagline}</p>
+        <p className="pitch-sub" style={{ fontSize: 'clamp(24px, 3vw, 36px)', color: 'var(--ink)', fontWeight: 500 }}>
+          "{COPY.close.tagline}"
+        </p>
       </section>
 
       <div className="pitch-footer">
