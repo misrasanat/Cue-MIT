@@ -44,7 +44,7 @@ export default function Learn({ lessons, statusOf, onStart, onOpenSessions }) {
               <div className="group-head">
                 <h2>Ready to review <span className="count">{due.length}</span></h2>
                 <button className="btn btn-soft" onClick={() => onStart(due.map((l) => l.id).slice(0, 5), 'review')}>
-                  Review them <ArrowRight size={16} />
+                  {due.length > 5 ? `Review 5 of ${due.length}` : 'Review them'} <ArrowRight size={16} />
                 </button>
               </div>
               <div className="rows">
