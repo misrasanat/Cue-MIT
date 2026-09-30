@@ -81,6 +81,7 @@ function LessonRun({ lesson, mode, position, progress, onExit, onFullLesson, onF
   const [rating, setRating] = useState(null);
   const [comeBack, setComeBack] = useState('');
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
 
   const options = useMemo(() => {
     if (!lesson.quiz) return [];
@@ -108,7 +109,8 @@ function LessonRun({ lesson, mode, position, progress, onExit, onFullLesson, onF
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard can be blocked; the line is still visible to read out.
+      setCopyFailed(true);
+      setTimeout(() => setCopyFailed(false), 2000);
     }
   };
 
@@ -262,6 +264,7 @@ function LessonRun({ lesson, mode, position, progress, onExit, onFullLesson, onF
               <button className="link-btn" onClick={copyStandup}>
                 {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy this</>}
               </button>
+              {copyFailed && <span className="muted">Couldn’t copy — select the text above instead.</span>}
             </div>
             <button className="btn btn-primary btn-lg" onClick={() => onFinished(rating)}>
               {isLast ? 'Finish' : 'Next idea'} <ArrowRight size={18} />
