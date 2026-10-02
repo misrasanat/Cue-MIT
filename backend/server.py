@@ -230,7 +230,7 @@ share = ShareSync(supabase_client)
 # and every model call passes through the spending limit in budget.py.
 llm_client = MetaClient()
 
-
+#testing testing
 def ai_available():
     """Lessons come from the team's Meta model (META_API_KEY in the environment)."""
     return llm_client.configured
