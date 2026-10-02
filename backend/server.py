@@ -230,7 +230,6 @@ share = ShareSync(supabase_client)
 # and every model call passes through the spending limit in budget.py.
 llm_client = MetaClient()
 
-#testing testing
 def ai_available():
     """Lessons come from the team's Meta model (META_API_KEY in the environment)."""
     return llm_client.configured
@@ -985,7 +984,7 @@ def standup():
     
     bullets = []
     for c in card_list[-3:]:
-        decision = c.get('decision') or c.get('file_path') or 'Updated codebase'
+        decision = c.get('decision') or c.get('file_path') or c.get('file') or 'Updated codebase'
         why = c.get('why', '')
         bullets.append(f"• {decision} — {why}")
     
