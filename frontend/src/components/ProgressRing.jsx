@@ -1,4 +1,7 @@
+import { useId } from 'react';
+
 export default function ProgressRing({ value, total, size = 104 }) {
+  const gradId = useId();
   const stroke = 10;
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
@@ -7,7 +10,7 @@ export default function ProgressRing({ value, total, size = 104 }) {
     <div className="ring" style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${value} of ${total} ideas learned`}>
         <defs>
-          <linearGradient id="ring-grad" x1="0" y1="0" x2="1" y2="1">
+          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor="#0052ff" />
             <stop offset="100%" stopColor="#4d7cff" />
           </linearGradient>
@@ -18,7 +21,7 @@ export default function ProgressRing({ value, total, size = 104 }) {
           cx={size / 2}
           cy={size / 2}
           r={r}
-          stroke="url(#ring-grad)"
+          stroke={`url(#${gradId})`}
           strokeWidth={stroke}
           fill="none"
           strokeLinecap="round"
