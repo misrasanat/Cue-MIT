@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 // Spaced repetition, kept deliberately simple: each lesson sits in a "box" and comes back
 // after a longer gap every time you remember it. Forgetting sends it back to box 0.
@@ -45,11 +45,13 @@ export function describeGap(box) {
 
 export function useProgress() {
   const [store, setStore] = useState(load);
+  const lastBox = useRef(0);
 
   const record = useCallback((id, { quizRight, rating, note }) => {
     setStore((prev) => {
       const cur = prev[id] || { box: 0, seen: 0 };
       const box = nextBox(cur.box, quizRight, rating);
+      lastBox.current = box;
       const next = {
         ...prev,
         [id]: {
@@ -63,8 +65,8 @@ export function useProgress() {
       save(next);
       return next;
     });
-    return nextBox((store[id] || { box: 0 }).box, quizRight, rating);
-  }, [store]);
+    return lastBox.current;
+  }, []);
 
   // 'new' | 'due' | 'learning' | 'solid'
   const statusOf = useCallback((id) => {
