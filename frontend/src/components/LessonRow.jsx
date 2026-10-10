@@ -9,7 +9,7 @@ const STATUS = {
 };
 
 export default function LessonRow({ lesson, status, onOpen, showSource = true }) {
-  const { label, Icon } = STATUS[status];
+  const { label, Icon } = STATUS[status] || STATUS.new;
   return (
     <button className={`lesson-row status-${status}`} onClick={onOpen}>
       <span className="lesson-row-icon" aria-hidden="true"><Icon size={18} /></span>
