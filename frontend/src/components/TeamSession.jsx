@@ -52,7 +52,7 @@ export default function TeamSession({ session, projectId, token, canGenerate, sh
       <div className="team-session-top">
         {showAuthor && (
           <span className="team-session-author">
-            <span className="avatar" aria-hidden="true">{session.author[0]}</span>
+            <span className="avatar" aria-hidden="true">{(session.author || '?')[0]}</span>
             {session.author}
           </span>
         )}
