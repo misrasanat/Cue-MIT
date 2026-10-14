@@ -205,7 +205,7 @@ class TeamQA:
             "intent": retrieval.intent, "people": [index.names.get(u, "") for u in retrieval.people],
             "sources": [self._source(n, docs[n - 1], now) for n in numbers],
         }
-        if mode == "ai":
+        if mode in ("ai", "basic"):
             self.cache.put(key, response)
         return response
 
