@@ -32,8 +32,7 @@ def cors_origins():
     listed = [o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
     if listed:
         return listed
-    app_url = os.environ.get("PUBLIC_APP_URL", "").strip().rstrip("/")
-    return [app_url] if app_url else "*"
+    return [public_app_url()]
 
 
 class RateLimiter:
