@@ -18,6 +18,7 @@ Usage:
 import os
 import json
 import time
+import datetime
 import threading
 import urllib.request
 from pathlib import Path
@@ -103,7 +104,7 @@ def _extract_payload(conv_id: str, step_index: int, tool_name: str, args: dict) 
         "tool_input": tool_input,
         "tool_response": {},
         "source": "agy_transcript",
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 
