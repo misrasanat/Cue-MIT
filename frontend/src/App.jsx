@@ -76,10 +76,12 @@ export default function App() {
   }, []);
 
   // Check for invite token in URL on mount
+  const [pendingInviteToken, setPendingInviteToken] = useState('');
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const inviteToken = params.get('token');
     if (inviteToken) {
+      setPendingInviteToken(inviteToken);
       setModal('project');
     }
   }, []);
@@ -464,6 +466,7 @@ export default function App() {
         <ProjectModal
           user={session?.user}
           token={token}
+          initialInviteToken={pendingInviteToken}
           projects={projects}
           activeProject={activeProject}
           onSelectProject={(p) => setActiveProject(p)}

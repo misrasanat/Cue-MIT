@@ -11,9 +11,10 @@ export default function ProjectModal({
   onSelectProject,
   onProjectsChanged,
   onClose,
-  initialTab = 'members'
+  initialTab = 'members',
+  initialInviteToken = ''
 }) {
-  const [tab, setTab] = useState(projects.length === 0 ? 'create' : initialTab); // 'members' | 'create' | 'join'
+  const [tab, setTab] = useState(initialInviteToken ? 'join' : (projects.length === 0 ? 'create' : initialTab)); // 'members' | 'create' | 'join'
   const [members, setMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
 
@@ -21,7 +22,7 @@ export default function ProjectModal({
   const [orgName, setOrgName] = useState('');
   const [projectName, setProjectName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteTokenOrUrl, setInviteTokenOrUrl] = useState('');
+  const [inviteTokenOrUrl, setInviteTokenOrUrl] = useState(initialInviteToken);
   const [generatedInvite, setGeneratedInvite] = useState(null);
   const [copied, setCopied] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
