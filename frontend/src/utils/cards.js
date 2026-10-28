@@ -94,7 +94,7 @@ export function shuffledOrder(n) {
 // "5 min ago" style labels for live activity. Timestamps from the server carry a UTC offset.
 export function timeAgo(iso) {
   const t = Date.parse(iso);
-  if (!t) return '';
+  if (Number.isNaN(t)) return '';
   const seconds = Math.max(0, (Date.now() - t) / 1000);
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
@@ -107,7 +107,7 @@ export function timeAgo(iso) {
 
 export function isLive(iso) {
   const t = Date.parse(iso);
-  return Boolean(t) && Date.now() - t < 5 * 60 * 1000;
+  return !Number.isNaN(t) && Date.now() - t < 5 * 60 * 1000;
 }
 
 export function sourceName(source) {
