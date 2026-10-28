@@ -189,7 +189,8 @@ class BudgetGuard:
                 self.shared.add_local_cost(cost)
             else:
                 self._unsynced += cost  # keep counting it even though the shared ledger missed it
-        total, _mode, cap = self._effective()
+        with self._lock:
+            total, _mode, cap = self._effective()
         if total >= cap:
             self._on_limit(total, cap, _mode)
 
