@@ -81,7 +81,7 @@ def install_global_hook():
                 break
 
         if existing_hook:
-            existing_hook["command"] = command_str
+            existing_hook.update(cue_hook_config)
         else:
             hooks_list.append(cue_hook_config)
 
