@@ -13,7 +13,9 @@ forgetting the variable can never leave the dangerous routes open.
 import os
 import threading
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
+
+MAX_TRACKED_KEYS = 5000  # bounds memory on a public server seeing many distinct visitors
 
 
 def is_public():
@@ -41,6 +43,7 @@ class RateLimiter:
     def __init__(self, limit, window, clock=time.time):
         self.limit, self.window, self.clock = limit, window, clock
         self._hits = defaultdict(deque)
+        self._order = OrderedDict()  # tracks recency so idle keys can be evicted
         self._lock = threading.Lock()
 
     def allow(self, key):
@@ -49,6 +52,11 @@ class RateLimiter:
             hits = self._hits[key]
             while hits and now - hits[0] > self.window:
                 hits.popleft()
+            self._order[key] = None
+            self._order.move_to_end(key)
+            while len(self._order) > MAX_TRACKED_KEYS:
+                oldest, _ = self._order.popitem(last=False)
+                self._hits.pop(oldest, None)
             if len(hits) >= self.limit:
                 return False
             hits.append(now)
