@@ -249,11 +249,15 @@ def get_project_members(project_id):
             else:
                 unassigned_members.append(m)
 
-        # Match unassigned members with accepted invites
+        # Match unassigned members with accepted invites. There's no stable link between an
+        # invite and the member it became, so a positional guess is only trustworthy when
+        # there's exactly one of each; with more than one of either, guessing could attach the
+        # wrong invited email to a teammate, so everyone falls back to a placeholder instead.
         remaining_invites = [inv for inv in accepted_invites if inv.get("invited_email") not in assigned_emails]
-        for idx, m in enumerate(unassigned_members):
-            if idx < len(remaining_invites):
-                matched_email = remaining_invites[idx]["invited_email"]
+        can_guess = len(unassigned_members) == 1 and len(remaining_invites) == 1
+        for m in unassigned_members:
+            if can_guess:
+                matched_email = remaining_invites[0]["invited_email"]
                 m["email"] = matched_email
                 uid = m.get("user_id")
                 if uid:
