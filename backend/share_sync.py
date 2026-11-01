@@ -43,7 +43,7 @@ def prepare_event(event, root=None):
     """Turns a locally logged event into the row that is safe to share."""
     kind = event.get("kind") or "edit"
     row = {
-        "at": event.get("at") or datetime.datetime.now().isoformat(timespec="seconds"),
+        "at": event.get("at") or datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         "kind": kind,
         "tool": event.get("tool") or "",
     }
