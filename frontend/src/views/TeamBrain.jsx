@@ -262,7 +262,7 @@ export default function TeamBrain({
           <div className="chips" role="group" aria-label="Teammates">
             {people.map((p) => (
               <button key={p.key} className={`chip chip-person ${p.key === activePerson?.key ? 'on' : ''}`} onClick={() => setPerson(p.key)}>
-                <span className="avatar" aria-hidden="true">{p.name[0]}</span>
+                <span className="avatar" aria-hidden="true">{(p.name || '?')[0]}</span>
                 {p.name} <span className="count">{p.lessons.length}</span>
               </button>
             ))}
