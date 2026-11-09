@@ -9,13 +9,15 @@ Antigravity, whose events carry a file path but no working directory.
 import json
 import os
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 LINK_DIR = ".cue"
 LINK_FILE = "project.json"
 
 _CACHE_SECONDS = 30
-_cache = {}
+_CACHE_MAX_KEYS = 2000  # bounds memory across long-running sessions touching many folders
+_cache = OrderedDict()
 
 
 def find_link(start):
@@ -34,6 +36,7 @@ def find_link(start):
     key = str(folder)
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < _CACHE_SECONDS:
+        _cache.move_to_end(key)
         return hit[1]
 
     found = None
@@ -54,6 +57,9 @@ def find_link(start):
             break
 
     _cache[key] = (time.time(), found)
+    _cache.move_to_end(key)
+    while len(_cache) > _CACHE_MAX_KEYS:
+        _cache.popitem(last=False)
     return found
 
 
