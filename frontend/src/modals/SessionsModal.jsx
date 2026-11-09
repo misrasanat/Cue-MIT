@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Layers, Sparkles, Loader2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import Modal from '../components/Modal';
 import { API_BASE, LOCAL_API_BASE } from '../utils/api';
@@ -24,14 +24,17 @@ export default function SessionsModal({ token, project, apiKeyConfigured, onClos
   const [generatingId, setGeneratingId] = useState(null);
   const [results, setResults] = useState({});
 
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
   const fetchSessions = async () => {
     try {
       const res = await fetch(`${LOCAL_API_BASE}/sessions`);
-      if (res.ok) setSessions(await res.json());
+      if (mountedRef.current && res.ok) setSessions(await res.json());
     } catch {
       // Backend offline; the empty state explains what to do.
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
