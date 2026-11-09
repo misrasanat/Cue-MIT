@@ -106,7 +106,7 @@ def iso_to_epoch(value):
 
 
 def ago(epoch, now=None):
-    if not epoch:
+    if epoch is None:
         return ""
     seconds = max(0, (now or time.time()) - epoch)
     if seconds < 90:
