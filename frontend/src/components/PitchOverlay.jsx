@@ -145,7 +145,7 @@ export default function PitchOverlay({ index, setIndex, onExit }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  });
+  }, [index, revealed]);
 
   const cls = (i) => `pitch-panel ${i === index ? 'is-active' : i < index ? 'is-past' : 'is-future'}`;
 
