@@ -392,8 +392,8 @@ def save_cue_card(user_id, card_data, project_id=None):
 
 def save_cue_card_to_db(user_id, card_data, project_id=None):
     """Backwards-compatible wrapper around save_cue_card that returns the stored row."""
-    save_cue_card(user_id, card_data, project_id=project_id)
-    return [card_data]
+    outcome = save_cue_card(user_id, card_data, project_id=project_id)
+    return [{**card_data, "shared": outcome["shared"], "share_error": outcome["error"]}]
 
 def get_user_cue_cards(user_id):
     """Fetches all Cue Cards for a specific user from Supabase + fallback."""
