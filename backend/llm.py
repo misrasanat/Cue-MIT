@@ -124,8 +124,8 @@ class MetaClient:
     # -- request ---------------------------------------------------------------------------------
     def fallback_models(self):
         """Other STANDARD models to try when the main one keeps answering 'not found' (never a training-tier model)."""
-        listed = os.environ.get("META_FALLBACK_MODELS")
-        names = [m.strip() for m in listed.split(",")] if listed is not None else ["muse-spark-1.2", "muse-spark-1.1"]
+        listed = (os.environ.get("META_FALLBACK_MODELS") or "").strip()
+        names = [m.strip() for m in listed.split(",")] if listed else ["muse-spark-1.2", "muse-spark-1.1"]
         return [m for m in names if m and m != self.model and not m.endswith("-contributor")]
 
     def chat(self, messages, max_tokens=1500, reasoning_effort="minimal", model=None):
