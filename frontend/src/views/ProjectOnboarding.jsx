@@ -69,7 +69,7 @@ export default function ProjectOnboarding({ user, token, onProjectCreated }) {
         body: JSON.stringify({ user_id: user?.id, email: user?.email })
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Failed to accept invite');
       }
       const data = await res.json();
