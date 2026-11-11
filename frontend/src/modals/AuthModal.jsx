@@ -17,9 +17,10 @@ export default function AuthModal({ user, startInSignUp = false, onClose, onAuth
     setErrorMsg('');
     setSuccessMsg('');
 
+    const cleanEmail = email.trim().toLowerCase();
     try {
       if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email: cleanEmail, password });
         if (error) throw error;
         if (data?.session) {
           setSuccessMsg('Account created. You’re signed in.');
@@ -29,7 +30,7 @@ export default function AuthModal({ user, startInSignUp = false, onClose, onAuth
           setIsSignUp(false); // Back to the sign-in form so they can log in after confirming
         }
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
         if (error) throw error;
         setSuccessMsg('Signed in.');
         if (data.session) onAuthSuccess(data.session);
