@@ -126,7 +126,11 @@ class BudgetGuard:
     def _save(self):
         try:
             self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
-            self.ledger_path.write_text(json.dumps(self.ledger), encoding="utf-8")
+            # Write-then-rename so a crash mid-write can never leave a truncated/corrupt ledger
+            # behind — _load() would otherwise silently reset spending to zero on a bad read.
+            tmp_path = self.ledger_path.with_suffix(self.ledger_path.suffix + ".tmp")
+            tmp_path.write_text(json.dumps(self.ledger), encoding="utf-8")
+            os.replace(tmp_path, self.ledger_path)
         except Exception as e:
             print(f"[Budget] Couldn't save the spend ledger: {e}")
 
